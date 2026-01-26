@@ -1,0 +1,35 @@
+# yt2pdf 설정 파일
+
+output:
+  directory: ./output
+  format: pdf          # pdf, md, html
+  filenamePattern: "{date}_{index}_{title}"
+
+screenshot:
+  interval: 60         # 캡처 간격 (초)
+  quality: low         # low(480p), medium(720p), high(1080p)
+
+subtitle:
+  priority: youtube    # youtube, whisper
+  languages:
+    - ko
+    - en
+
+pdf:
+  layout: vertical     # vertical, horizontal
+  theme: default       # default, note, minimal
+  includeToc: true
+  timestampLinks: true
+  searchable: true
+
+whisper:
+  provider: openai     # openai, groq, local
+
+cache:
+  enabled: true
+  ttl: 7               # 캐시 유지 기간 (일)
+
+processing:
+  maxDuration: 7200    # 최대 영상 길이 (초, 2시간)
+  parallel: true
+  retryCount: 3
