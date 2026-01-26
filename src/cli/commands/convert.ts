@@ -8,8 +8,9 @@ import { Orchestrator } from '../../core/orchestrator.js';
 import { configManager } from '../../utils/config.js';
 import { cacheManager } from '../../utils/cache.js';
 import { logger } from '../../utils/logger.js';
-import { isValidYouTubeUrl, parseYouTubeUrl } from '../../utils/url.js';
+import { parseYouTubeUrl } from '../../utils/url.js';
 import { formatBytes } from '../../utils/file.js';
+import { validateCLIOptions } from '../../utils/validation.js';
 import { CLIOptions, OutputFormat, PDFLayout, ImageQuality } from '../../types/config.js';
 
 interface ConvertCommandOptions {
@@ -35,9 +36,21 @@ export async function convertCommand(url: string | undefined, options: ConvertCo
     return;
   }
 
-  // URL 유효성 검사
-  if (!isValidYouTubeUrl(url)) {
-    console.error(chalk.red('✖ 유효하지 않은 YouTube URL입니다.'));
+  // 모든 입력 유효성 검사
+  const validation = validateCLIOptions({
+    url,
+    format: options.format,
+    layout: options.layout,
+    quality: options.quality,
+    interval: options.interval,
+    lang: options.lang,
+    output: options.output,
+  });
+
+  if (!validation.valid) {
+    for (const error of validation.errors) {
+      console.error(chalk.red(`✖ ${error}`));
+    }
     process.exit(1);
   }
 

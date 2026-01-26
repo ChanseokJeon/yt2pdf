@@ -7,8 +7,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PDFContent, PDFSection, VideoMetadata } from '../types/index.js';
 import { PDFConfig } from '../types/config.js';
-import { formatTimestamp, buildTimestampUrl } from '../utils/index.js';
+import { formatTimestamp, buildTimestampUrl, cleanSubtitleText, deduplicateSubtitles } from '../utils/index.js';
 import { logger } from '../utils/logger.js';
+
+// Font paths - relative to project root
+function getFontsDir(): string {
+  // Try multiple possible locations
+  const possiblePaths = [
+    path.resolve(process.cwd(), 'assets/fonts'),
+    path.resolve(__dirname, '../../assets/fonts'),
+    path.resolve(__dirname, '../../../assets/fonts'),
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return possiblePaths[0]; // default
+}
+
+const FONTS_DIR = getFontsDir();
+const KOREAN_FONT_REGULAR = path.join(FONTS_DIR, 'NotoSansKR-Regular.otf');
+const KOREAN_FONT_BOLD = path.join(FONTS_DIR, 'NotoSansKR-Bold.otf');
 
 export interface Theme {
   name: string;
@@ -33,14 +54,23 @@ export interface Theme {
   };
 }
 
+// Check if Korean fonts are available
+function hasKoreanFonts(): boolean {
+  try {
+    return fs.existsSync(KOREAN_FONT_REGULAR) && fs.existsSync(KOREAN_FONT_BOLD);
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_THEME: Theme = {
   name: 'default',
   margins: { top: 50, bottom: 50, left: 50, right: 50 },
   fonts: {
-    title: { name: 'Helvetica-Bold', size: 24 },
-    heading: { name: 'Helvetica-Bold', size: 14 },
-    body: { name: 'Helvetica', size: 11 },
-    timestamp: { name: 'Helvetica', size: 10 },
+    title: { name: 'NotoSansKR-Bold', size: 24 },
+    heading: { name: 'NotoSansKR-Bold', size: 14 },
+    body: { name: 'NotoSansKR-Regular', size: 11 },
+    timestamp: { name: 'NotoSansKR-Regular', size: 10 },
   },
   colors: {
     primary: '#2563eb',
@@ -83,6 +113,20 @@ export class PDFGenerator {
             Creator: 'yt2pdf',
           },
         });
+
+        // Register Korean fonts
+        if (hasKoreanFonts()) {
+          doc.registerFont('NotoSansKR-Regular', KOREAN_FONT_REGULAR);
+          doc.registerFont('NotoSansKR-Bold', KOREAN_FONT_BOLD);
+          logger.debug('한글 폰트 로드 완료');
+        } else {
+          logger.warn('한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.');
+          // Fallback to Helvetica
+          this.theme.fonts.title.name = 'Helvetica-Bold';
+          this.theme.fonts.heading.name = 'Helvetica-Bold';
+          this.theme.fonts.body.name = 'Helvetica';
+          this.theme.fonts.timestamp.name = 'Helvetica';
+        }
 
         const writeStream = fs.createWriteStream(outputPath);
         doc.pipe(writeStream);
@@ -155,9 +199,11 @@ export class PDFGenerator {
       const imgName = path.basename(section.screenshot.imagePath);
       md += `![Screenshot](./images/${imgName})\n\n`;
 
-      // 자막
-      for (const sub of section.subtitles) {
-        md += `${sub.text}\n\n`;
+      // 자막 - 정리 및 중복 제거
+      const subtitleTexts = section.subtitles.map((sub) => cleanSubtitleText(sub.text));
+      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+      for (const text of dedupedTexts) {
+        md += `${text}\n\n`;
       }
 
       md += `---\n\n`;
@@ -214,8 +260,16 @@ export class PDFGenerator {
     <div class="subtitle">
 `;
 
-      for (const sub of section.subtitles) {
-        html += `      <p>${sub.text}</p>\n`;
+      // 자막 - 정리 및 중복 제거
+      const subtitleTexts = section.subtitles.map((sub) => cleanSubtitleText(sub.text));
+      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+      for (const text of dedupedTexts) {
+        // HTML 출력에서는 특수문자 이스케이프
+        const escaped = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        html += `      <p>${escaped}</p>\n`;
       }
 
       html += `    </div>
@@ -331,14 +385,17 @@ export class PDFGenerator {
 
     doc.moveDown(0.5);
 
-    // 자막
+    // 자막 - 정리 및 중복 제거
+    const subtitleTexts = section.subtitles.map((sub) => cleanSubtitleText(sub.text));
+    const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+
     doc
       .font(theme.fonts.body.name)
       .fontSize(theme.fonts.body.size)
       .fillColor(theme.colors.text);
 
-    for (const sub of section.subtitles) {
-      doc.text(sub.text);
+    for (const text of dedupedTexts) {
+      doc.text(text);
     }
   }
 
@@ -384,14 +441,16 @@ export class PDFGenerator {
 
     doc.moveDown(0.5);
 
-    // 자막
+    // 자막 - 정리 및 중복 제거
+    const subtitleTexts = section.subtitles.map((sub) => cleanSubtitleText(sub.text));
+    const dedupedTexts = deduplicateSubtitles(subtitleTexts);
     doc
       .font(theme.fonts.body.name)
       .fontSize(theme.fonts.body.size)
       .fillColor(theme.colors.text);
 
-    for (const sub of section.subtitles) {
-      doc.text(sub.text, rightX, doc.y, { width: halfWidth });
+    for (const text of dedupedTexts) {
+      doc.text(text, rightX, doc.y, { width: halfWidth });
     }
   }
 

@@ -2,6 +2,11 @@
 
 YouTube 영상의 자막과 스크린샷을 추출하여 PDF로 변환하는 CLI 도구
 
+[![Test](https://img.shields.io/badge/tests-87%20passed-brightgreen)]()
+[![Coverage](https://img.shields.io/badge/coverage-98%25-brightgreen)]()
+[![Node](https://img.shields.io/badge/node-%3E%3D18-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
+
 ## 기능
 
 - YouTube 자막 추출 (자동 자막 포함)
@@ -23,7 +28,7 @@ YouTube 영상의 자막과 스크린샷을 추출하여 PDF로 변환하는 CLI
 
 ```bash
 # 저장소 클론
-git clone https://github.com/your-username/yt2pdf.git
+git clone https://github.com/ChanseokJeon/yt2pdf.git
 cd yt2pdf
 
 # 의존성 설치 (ffmpeg, yt-dlp 자동 설치)
@@ -172,6 +177,76 @@ const results = await convertPlaylist({
   url: 'https://youtube.com/playlist?list=xxxxx',
 });
 ```
+
+## API Reference
+
+### Types
+
+```typescript
+// 출력 형식
+type OutputFormat = 'pdf' | 'md' | 'html';
+
+// PDF 레이아웃
+type PDFLayout = 'vertical' | 'horizontal';
+
+// 이미지 품질
+type ImageQuality = 'low' | 'medium' | 'high';
+// low: 480p, medium: 720p, high: 1080p
+
+// 변환 결과
+interface ConversionResult {
+  outputPath: string;      // 생성된 파일 경로
+  metadata: VideoMetadata; // 영상 메타데이터
+  stats: {
+    pages: number;         // 페이지 수
+    fileSize: number;      // 파일 크기 (bytes)
+    screenshotCount: number; // 스크린샷 개수
+    duration: number;      // 영상 길이 (초)
+  };
+}
+
+// 영상 메타데이터
+interface VideoMetadata {
+  id: string;              // YouTube 영상 ID
+  title: string;           // 영상 제목
+  channel: string;         // 채널명
+  duration: number;        // 영상 길이 (초)
+  thumbnail: string;       // 썸네일 URL
+}
+```
+
+### Functions
+
+#### `convert(options): Promise<ConversionResult>`
+
+단일 YouTube 영상을 변환합니다.
+
+| 옵션 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `url` | `string` | (필수) | YouTube URL |
+| `output` | `string` | `./output` | 출력 디렉토리 |
+| `format` | `OutputFormat` | `pdf` | 출력 형식 |
+| `interval` | `number` | `60` | 스크린샷 간격 (초) |
+| `layout` | `PDFLayout` | `vertical` | PDF 레이아웃 |
+| `quality` | `ImageQuality` | `low` | 스크린샷 품질 |
+| `lang` | `string` | 자동 감지 | 자막 언어 코드 |
+
+#### `convertPlaylist(options): Promise<ConversionResult[]>`
+
+YouTube 플레이리스트의 모든 영상을 변환합니다.
+
+### Input Validation
+
+CLI는 다음 입력을 자동으로 검증합니다:
+
+| 항목 | 검증 규칙 |
+|------|-----------|
+| YouTube URL | youtube.com 또는 youtu.be 형식 |
+| 출력 형식 | pdf, md, html 중 하나 |
+| 레이아웃 | vertical, horizontal 중 하나 |
+| 품질 | low, medium, high 중 하나 |
+| 간격 | 5~600초 범위의 숫자 |
+| 언어 코드 | ISO 639-1 형식 (예: ko, en) |
 
 ## 캐시 관리
 

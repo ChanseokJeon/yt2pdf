@@ -7,3 +7,5 @@ export * from './config.js';
 export * from './cache.js';
 export * from './file.js';
 export * from './url.js';
+export * from './text.js';
+export * from './validation.js';
