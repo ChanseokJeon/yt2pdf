@@ -105,7 +105,7 @@ function mergeRollingSubtitles(texts: string[]): string[] {
     const next = texts[i];
     const overlap = findWordOverlap(current, next);
 
-    if (overlap.overlapLength > 2) {
+    if (overlap.overlapLength > 1 || overlap.overlapText.length >= 10) {
       // 겹치는 부분 제거 후 병합
       const uniquePart = next.substring(overlap.overlapText.length).trim();
       if (uniquePart.length > 0) {
@@ -135,8 +135,8 @@ function findWordOverlap(text1: string, text2: string): { overlapText: string; o
   const words1 = text1.split(/\s+/).filter(w => w.length > 0);
   const words2 = text2.split(/\s+/).filter(w => w.length > 0);
 
-  // 최대 겹침 단어 수 (text2의 절반까지만 검사)
-  const maxOverlap = Math.min(words1.length, Math.floor(words2.length / 2) + 1, 10);
+  // 최대 겹침 단어 수 (YouTube 롤링 자막 패턴 대응 - 더 넓은 범위 검사)
+  const maxOverlap = Math.min(words1.length, words2.length - 1, 15);
 
   for (let n = maxOverlap; n > 0; n--) {
     const suffix = words1.slice(-n).join(' ').toLowerCase();

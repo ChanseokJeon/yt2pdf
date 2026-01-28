@@ -13,6 +13,39 @@ import { formatTimestamp, buildTimestampUrl, cleanSubtitleText, deduplicateSubti
 import { logger } from '../utils/logger.js';
 
 /**
+ * 텍스트를 PDF 렌더링에 안전한 형태로 정규화
+ * - NFC 정규화 (한글 조합형 → 완성형)
+ * - 제어 문자 제거
+ * - 특수 유니코드 문자 필터링
+ */
+function normalizeTextForPDF(text: string): string {
+  if (!text) return text;
+
+  // 1. NFC 정규화 (한글 조합형 → 완성형)
+  // NFD 형태의 한글(ㅎㅏㄴㄱㅡㄹ)을 NFC 형태(한글)로 변환
+  let normalized = text.normalize('NFC');
+
+  // 2. 제어 문자 제거 (탭, 줄바꿈은 유지)
+  normalized = normalized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  // 3. 유니코드 대체 문자(Replacement Character) 제거
+  normalized = normalized.replace(/\uFFFD/g, '');
+
+  // 4. Zero-width 문자 제거 (ZWJ, ZWNJ, ZWSP 등)
+  normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+  // 5. 한글 확장 문자 제거 (PDFKit에서 렌더링 실패하는 문자들)
+  // - D7B0-D7FF: 한글 자모 확장-B
+  // - A960-A97F: 한글 자모 확장-A
+  normalized = normalized.replace(/[\uD7B0-\uD7FF\uA960-\uA97F]/g, '');
+
+  // 6. Private Use Area 문자 제거
+  normalized = normalized.replace(/[\uE000-\uF8FF]/g, '');
+
+  return normalized;
+}
+
+/**
  * URL에서 이미지를 Buffer로 다운로드
  */
 async function downloadImageToBuffer(url: string): Promise<Buffer | null> {
@@ -203,12 +236,12 @@ export class PDFGenerator {
             .fontSize(9)
             .fillColor(this.theme.colors.secondary);
 
-          // 제목 (왼쪽)
+          // 제목 (왼쪽) - NFC 정규화 적용
           const shortTitle =
             content.metadata.title.length > 45
               ? content.metadata.title.substring(0, 45) + '...'
               : content.metadata.title;
-          doc.text(shortTitle, this.theme.margins.left, bottomY, {
+          doc.text(normalizeTextForPDF(shortTitle), this.theme.margins.left, bottomY, {
             width: doc.page.width / 2 - this.theme.margins.left,
             align: 'left',
             lineBreak: false,
@@ -1022,12 +1055,12 @@ ${sections.map((s) => {
         const { theme } = this;
         const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-        // 제목 섹션
+        // 제목 섹션 - NFC 정규화 적용
         doc
           .font(theme.fonts.title.name)
           .fontSize(20)
           .fillColor(theme.colors.text)
-          .text(`📹 ${brief.title}`, { width: pageWidth, align: 'left' });
+          .text(normalizeTextForPDF(`📹 ${brief.title}`), { width: pageWidth, align: 'left' });
 
         doc.moveDown(0.3);
 
@@ -1047,7 +1080,7 @@ ${sections.map((s) => {
           .fontSize(10)
           .fillColor(theme.colors.secondary)
           .text(
-            `채널: ${brief.metadata.channel} | 길이: ${formatTimestamp(brief.metadata.duration)} | 유형: ${videoTypeLabels[brief.metadata.videoType] || brief.metadata.videoType}`,
+            normalizeTextForPDF(`채널: ${brief.metadata.channel} | 길이: ${formatTimestamp(brief.metadata.duration)} | 유형: ${videoTypeLabels[brief.metadata.videoType] || brief.metadata.videoType}`),
             { width: pageWidth }
           );
 
@@ -1061,7 +1094,7 @@ ${sections.map((s) => {
 
         doc.moveDown(0.8);
 
-        // 핵심 요약
+        // 핵심 요약 - NFC 정규화 적용
         doc
           .font(theme.fonts.heading.name)
           .fontSize(12)
@@ -1074,7 +1107,7 @@ ${sections.map((s) => {
           .font(theme.fonts.body.name)
           .fontSize(10)
           .fillColor(theme.colors.text)
-          .text(brief.summary, { width: pageWidth, lineGap: 2 });
+          .text(normalizeTextForPDF(brief.summary), { width: pageWidth, lineGap: 2 });
 
         doc.moveDown(0.8);
 
@@ -1086,7 +1119,7 @@ ${sections.map((s) => {
 
         doc.moveDown(0.8);
 
-        // Key Takeaways
+        // Key Takeaways - NFC 정규화 적용
         if (brief.keyTakeaways.length > 0) {
           doc
             .font(theme.fonts.heading.name)
@@ -1098,7 +1131,7 @@ ${sections.map((s) => {
 
           doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
           for (const point of brief.keyTakeaways) {
-            doc.text(`• ${point}`, { width: pageWidth - 15, indent: 10, lineGap: 2 });
+            doc.text(normalizeTextForPDF(`• ${point}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
           }
 
           doc.moveDown(0.8);
@@ -1112,7 +1145,7 @@ ${sections.map((s) => {
           doc.moveDown(0.8);
         }
 
-        // 챕터별 요약
+        // 챕터별 요약 - NFC 정규화 적용
         if (brief.chapterSummaries.length > 0) {
           doc
             .font(theme.fonts.heading.name)
@@ -1134,19 +1167,19 @@ ${sections.map((s) => {
               .font(theme.fonts.body.name)
               .fontSize(10)
               .fillColor(theme.colors.text)
-              .text(`${chapter.title}`, { continued: chapter.summary ? true : false });
+              .text(normalizeTextForPDF(chapter.title), { continued: chapter.summary ? true : false });
 
             if (chapter.summary) {
               doc
                 .fillColor(theme.colors.secondary)
-                .text(` - ${chapter.summary}`);
+                .text(normalizeTextForPDF(` - ${chapter.summary}`));
             }
           }
 
           doc.moveDown(0.8);
         }
 
-        // Action Items (있는 경우)
+        // Action Items (있는 경우) - NFC 정규화 적용
         if (brief.actionItems && brief.actionItems.length > 0) {
           // 구분선
           doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
@@ -1166,7 +1199,7 @@ ${sections.map((s) => {
 
           doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
           for (const item of brief.actionItems) {
-            doc.text(`□ ${item}`, { width: pageWidth - 15, indent: 10, lineGap: 2 });
+            doc.text(normalizeTextForPDF(`□ ${item}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
           }
         }
 
@@ -1415,12 +1448,12 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     const { theme } = this;
     const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-    // 제목
+    // 제목 (NFC 정규화 적용)
     doc
       .font(theme.fonts.title.name)
       .fontSize(theme.fonts.title.size)
       .fillColor(theme.colors.text)
-      .text(metadata.title, { width: pageWidth, align: 'center' });
+      .text(normalizeTextForPDF(metadata.title), { width: pageWidth, align: 'center' });
 
     doc.moveDown(1);
 
@@ -1441,13 +1474,13 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(1);
 
-    // 메타 정보
+    // 메타 정보 (NFC 정규화 적용)
     doc
       .font(theme.fonts.body.name)
       .fontSize(theme.fonts.body.size)
       .fillColor(theme.colors.secondary);
 
-    doc.text(`채널: ${metadata.channel}`, { align: 'center' });
+    doc.text(normalizeTextForPDF(`채널: ${metadata.channel}`), { align: 'center' });
     doc.text(`영상 길이: ${formatTimestamp(metadata.duration)}`, { align: 'center' });
     if (sectionCount) {
       doc.text(`섹션: ${sectionCount}개`, { align: 'center' });
@@ -1462,7 +1495,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     doc.fillColor(theme.colors.secondary);
     doc.text(`생성일: ${new Date().toISOString().split('T')[0]}`, { align: 'center' });
 
-    // 요약 (있는 경우)
+    // 요약 (있는 경우) - NFC 정규화 적용
     if (summary && summary.summary) {
       doc.moveDown(1.5);
 
@@ -1475,12 +1508,12 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
       doc.moveDown(0.5);
 
-      // 요약 본문
+      // 요약 본문 (NFC 정규화 적용 - AI 응답 깨짐 방지)
       doc
         .font(theme.fonts.body.name)
         .fontSize(theme.fonts.body.size)
         .fillColor(theme.colors.text)
-        .text(summary.summary, { align: 'left', width: pageWidth });
+        .text(normalizeTextForPDF(summary.summary), { align: 'left', width: pageWidth });
 
       // 핵심 포인트 (있는 경우)
       if (summary.keyPoints && summary.keyPoints.length > 0) {
@@ -1500,7 +1533,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
           .fillColor(theme.colors.text);
 
         for (const point of summary.keyPoints) {
-          doc.text(`• ${point}`, { indent: 10, width: pageWidth - 10 });
+          doc.text(normalizeTextForPDF(`• ${point}`), { indent: 10, width: pageWidth - 10 });
         }
       }
     }
@@ -1548,13 +1581,13 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       const section = sections[i];
       const timestamp = formatTimestamp(section.timestamp);
       const rawPreview = section.subtitles[0]?.text || '';
-      const preview = cleanSubtitleText(rawPreview).substring(0, 50);
+      const preview = normalizeTextForPDF(cleanSubtitleText(rawPreview)).substring(0, 50);
       const pageNum = startPage + i;
 
       // 타임스탬프 (파란색)
       doc.fillColor(theme.colors.link).text(`${timestamp}`, { continued: true });
 
-      // 제목 미리보기 (검정색)
+      // 제목 미리보기 (검정색) - NFC 정규화 적용
       const previewText = preview ? `  ${preview}...` : '';
       doc.fillColor(theme.colors.text).text(previewText, { continued: true });
 
@@ -1580,13 +1613,13 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     const { theme } = this;
     const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-    // 챕터 제목 (있는 경우)
+    // 챕터 제목 (있는 경우) - NFC 정규화 적용
     if (section.chapterTitle) {
       doc
         .font(theme.fonts.heading.name)
         .fontSize(14)
         .fillColor(theme.colors.text)
-        .text(`📑 ${section.chapterTitle}`, { width: pageWidth });
+        .text(normalizeTextForPDF(`📑 ${section.chapterTitle}`), { width: pageWidth });
       doc.moveDown(0.5);
     }
 
@@ -1621,28 +1654,28 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(0.3);
 
-    // 섹션 요약 (있는 경우)
+    // 섹션 요약 (있는 경우) - NFC 정규화 적용
     if (section.sectionSummary && section.sectionSummary.summary) {
       doc
         .font(theme.fonts.body.name)
         .fontSize(10)
         .fillColor(theme.colors.primary)
-        .text(`💡 ${section.sectionSummary.summary}`, { width: pageWidth });
+        .text(normalizeTextForPDF(`💡 ${section.sectionSummary.summary}`), { width: pageWidth });
 
       if (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) {
         doc.moveDown(0.2);
         doc.fillColor(theme.colors.secondary).fontSize(9);
         for (const point of section.sectionSummary.keyPoints) {
-          doc.text(`  • ${point}`, { width: pageWidth });
+          doc.text(normalizeTextForPDF(`  • ${point}`), { width: pageWidth });
         }
       }
       doc.moveDown(0.5);
     }
 
-    // 자막 - 정리, 혼합 언어 정리, 중복 제거
+    // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
     const subtitleTexts = section.subtitles.map((sub) => {
       const cleaned = cleanSubtitleText(sub.text);
-      return cleanMixedLanguageText(cleaned, 'ko');
+      return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
     });
     const dedupedTexts = deduplicateSubtitles(subtitleTexts);
 
@@ -1707,10 +1740,10 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(0.5);
 
-    // 자막 - 정리, 혼합 언어 정리, 중복 제거
+    // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
     const subtitleTexts = section.subtitles.map((sub) => {
       const cleaned = cleanSubtitleText(sub.text);
-      return cleanMixedLanguageText(cleaned, 'ko');
+      return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
     });
     const dedupedTexts = deduplicateSubtitles(subtitleTexts);
 

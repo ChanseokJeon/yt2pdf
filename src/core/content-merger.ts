@@ -34,8 +34,14 @@ export class ContentMerger {
         this.screenshotInterval
       );
 
-      // 자막이 있는 섹션만 추가 (빈 페이지 방지)
-      if (relevantSubtitles.length > 0) {
+      // 자막이 충분한 섹션만 추가 (빈 페이지 방지)
+      // 조건: 단어 수 5개 이상 또는 구간 대비 음성 비율 10% 이상
+      const totalText = relevantSubtitles.map(s => s.text).join(' ');
+      const wordCount = totalText.split(/\s+/).filter(w => w.length > 0).length;
+      const speechDuration = relevantSubtitles.reduce((sum, s) => sum + (s.end - s.start), 0);
+      const durationRatio = this.screenshotInterval > 0 ? speechDuration / this.screenshotInterval : 0;
+
+      if (wordCount >= 5 || durationRatio >= 0.1) {
         sections.push({
           timestamp: screenshot.timestamp,
           screenshot,
@@ -74,8 +80,15 @@ export class ContentMerger {
         chapter.endTime
       );
 
-      // 자막이 있는 섹션만 추가 (빈 페이지 방지)
-      if (chapterSubtitles.length > 0) {
+      // 자막이 충분한 섹션만 추가 (빈 페이지 방지)
+      // 조건: 단어 수 5개 이상 또는 챕터 구간 대비 음성 비율 10% 이상
+      const totalText = chapterSubtitles.map(s => s.text).join(' ');
+      const wordCount = totalText.split(/\s+/).filter(w => w.length > 0).length;
+      const chapterDuration = chapter.endTime - chapter.startTime;
+      const speechDuration = chapterSubtitles.reduce((sum, s) => sum + (s.end - s.start), 0);
+      const durationRatio = chapterDuration > 0 ? speechDuration / chapterDuration : 0;
+
+      if (wordCount >= 5 || durationRatio >= 0.1) {
         sections.push({
           timestamp: chapter.startTime,
           screenshot,

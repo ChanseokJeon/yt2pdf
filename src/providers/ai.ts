@@ -39,6 +39,47 @@ export class AIProvider {
   private client: OpenAI;
   private model: string;
 
+  /**
+   * AI 응답 텍스트에서 이상한 유니코드 문자 제거
+   * - 표준 한글 음절(AC00-D7AF)만 허용
+   * - 희귀 한글 확장 문자(걻걼걽걾 등) 제거
+   */
+  private sanitizeText(text: string): string {
+    if (!text) return text;
+
+    // 허용할 문자 범위:
+    // - 기본 라틴 문자, 숫자, 공백, 구두점 (0020-007E)
+    // - 표준 한글 음절 (AC00-D7AF) - 가~힣
+    // - 한글 자모 (1100-11FF, 3130-318F) - ㄱ~ㅎ, ㅏ~ㅣ 등
+    // - CJK 통합 한자 (4E00-9FFF) - 가끔 포함될 수 있음
+    // - 일반 구두점, 괄호, 따옴표 등
+    //
+    // 제거할 문자:
+    // - 호환 한글 자모 확장 (3200-321E) - 괄호로 둘러싸인 한글
+    // - 한글 확장-A (A960-A97F)
+    // - 한글 확장-B (D7B0-D7FF) - 걻걼걽걾 같은 이상한 문자들
+
+    const sanitized = text.replace(/[\uD7B0-\uD7FF\uA960-\uA97F\u3200-\u321E]/g, '');
+
+    // 연속된 이상한 패턴 제거 (예: "89:;", "이IJKLM" 같은 깨진 텍스트)
+    // ASCII와 한글이 비정상적으로 섞인 패턴 감지
+    const cleanedOfGarbage = sanitized
+      // 숫자+구두점이 단어 중간에 나타나는 패턴 (예: "89:;")
+      .replace(/[\uAC00-\uD7AF][\d:;]+[\uAC00-\uD7AF]/g, (match) => {
+        // 의미 있는 패턴(시간 표기 등)이 아니면 한글만 유지
+        const hangul = match.replace(/[\d:;]+/g, '');
+        return hangul;
+      })
+      // 연속된 의미 없는 문자 시퀀스 제거
+      .replace(/[A-Z]{4,}[가-힣]/g, (match) => {
+        // "IJKLM이" 같은 패턴 - 마지막 한글만 유지
+        const lastHangul = match.match(/[가-힣]+$/);
+        return lastHangul ? lastHangul[0] : '';
+      });
+
+    return cleanedOfGarbage;
+  }
+
   constructor(apiKey?: string, model: string = 'gpt-4o-mini') {
     const key = apiKey || process.env.OPENAI_API_KEY;
     if (!key) {
@@ -117,12 +158,14 @@ KEY_POINTS:
       const summaryMatch = content.match(/SUMMARY:\s*([\s\S]*?)(?=KEY_POINTS:|$)/i);
       const keyPointsMatch = content.match(/KEY_POINTS:\s*([\s\S]*?)$/i);
 
-      const summary = summaryMatch ? summaryMatch[1].trim() : content.trim();
+      // 이상한 유니코드 문자 제거 적용
+      const rawSummary = summaryMatch ? summaryMatch[1].trim() : content.trim();
+      const summary = this.sanitizeText(rawSummary);
       const keyPointsText = keyPointsMatch ? keyPointsMatch[1].trim() : '';
 
       const keyPoints = keyPointsText
         .split('\n')
-        .map((line) => line.replace(/^[-•*]\s*/, '').trim())
+        .map((line) => this.sanitizeText(line.replace(/^[-•*]\s*/, '').trim()))
         .filter((line) => line.length > 0);
 
       logger.debug(`AI 요약 완료: ${summary.length}자, ${keyPoints.length}개 핵심 포인트`);
@@ -209,11 +252,12 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
         const match = content.match(sectionRegex);
 
         if (match) {
-          const summary = match[1].trim();
+          // 이상한 유니코드 문자 제거 적용
+          const summary = this.sanitizeText(match[1].trim());
           const pointsText = match[2].trim();
           const keyPoints = pointsText
             .split('\n')
-            .map((line) => line.replace(/^[-•*]\s*/, '').trim())
+            .map((line) => this.sanitizeText(line.replace(/^[-•*]\s*/, '').trim()))
             .filter((line) => line.length > 0)
             .slice(0, maxKeyPoints);
 
@@ -341,7 +385,7 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
           }
         }
 
-        // 세그먼트에 번역 적용 (검증 포함)
+        // 세그먼트에 번역 적용 (검증 및 재시도 포함)
         for (let j = 0; j < batch.length; j++) {
           const original = batch[j];
           let translatedText = translatedTexts.get(j) || original.text;
@@ -352,9 +396,46 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
             const totalChars = translatedText.replace(/[\s\d\W]/g, '').length;
             const koreanRatio = totalChars > 0 ? koreanChars / totalChars : 0;
 
-            // 한글이 30% 미만이면 번역 품질 낮음으로 간주, 경고 로그
-            if (koreanRatio < 0.3 && totalChars > 5) {
-              logger.warn(`번역 품질 낮음 (한글 ${(koreanRatio * 100).toFixed(0)}%): ${translatedText.slice(0, 50)}...`);
+            // 한글이 50% 미만이면 재시도 (최대 1회)
+            if (koreanRatio < 0.5 && totalChars > 5) {
+              logger.warn(`번역 품질 낮음 (한글 ${(koreanRatio * 100).toFixed(0)}%), 재시도 중...`);
+              try {
+                const retryResponse = await this.client.chat.completions.create({
+                  model: this.model,
+                  messages: [
+                    {
+                      role: 'system',
+                      content: `이전 번역에 영어가 혼합되었습니다. 반드시 100% 한국어로만 번역하세요. 기술 용어도 한글로 음역하거나 설명하세요.`,
+                    },
+                    {
+                      role: 'user',
+                      content: `한국어로 번역: ${original.text}`,
+                    },
+                  ],
+                  temperature: 0.2,
+                  max_tokens: 500,
+                });
+                const retryText = retryResponse.choices[0]?.message?.content?.trim();
+                if (retryText) {
+                  const retryKoreanChars = (retryText.match(/[\uAC00-\uD7AF]/g) || []).length;
+                  const retryTotalChars = retryText.replace(/[\s\d\W]/g, '').length;
+                  const retryKoreanRatio = retryTotalChars > 0 ? retryKoreanChars / retryTotalChars : 0;
+
+                  // 재시도 결과가 더 나으면 사용, 아니면 원문 유지
+                  if (retryKoreanRatio >= 0.5) {
+                    translatedText = retryText;
+                    logger.debug(`재시도 성공 (한글 ${(retryKoreanRatio * 100).toFixed(0)}%)`);
+                  } else {
+                    // 재시도도 실패하면 원문 유지 (깨진 번역보다 나음)
+                    translatedText = original.text;
+                    logger.warn(`재시도 실패, 원문 유지: ${original.text.slice(0, 30)}...`);
+                  }
+                }
+              } catch {
+                // 재시도 API 호출 실패 시 원문 유지
+                translatedText = original.text;
+                logger.warn(`재시도 API 실패, 원문 유지`);
+              }
             }
           }
 
@@ -699,6 +780,7 @@ ${chapterTexts.map((c) => `[${this.formatTimestamp(c.startTime)}] ${c.title}\n${
 
       const parsed = JSON.parse(jsonMatch[0]);
 
+      // 이상한 유니코드 문자 제거 적용
       const brief: ExecutiveBrief = {
         title: metadata.title,
         metadata: {
@@ -708,17 +790,19 @@ ${chapterTexts.map((c) => `[${this.formatTimestamp(c.startTime)}] ${c.title}\n${
           uploadDate: metadata.uploadDate,
           videoId: metadata.id,
         },
-        summary: parsed.summary || '',
-        keyTakeaways: Array.isArray(parsed.keyTakeaways) ? parsed.keyTakeaways : [],
+        summary: this.sanitizeText(parsed.summary || ''),
+        keyTakeaways: Array.isArray(parsed.keyTakeaways)
+          ? parsed.keyTakeaways.map((t: string) => this.sanitizeText(t))
+          : [],
         chapterSummaries: Array.isArray(parsed.chapterSummaries)
           ? parsed.chapterSummaries.map((c: { title?: string; startTime?: number; summary?: string }, i: number) => ({
-              title: c.title || chapters[i]?.title || `챕터 ${i + 1}`,
+              title: this.sanitizeText(c.title || chapters[i]?.title || `챕터 ${i + 1}`),
               startTime: c.startTime ?? chapters[i]?.startTime ?? 0,
-              summary: c.summary || '',
+              summary: this.sanitizeText(c.summary || ''),
             }))
           : [],
         actionItems: Array.isArray(parsed.actionItems) && parsed.actionItems.length > 0
-          ? parsed.actionItems
+          ? parsed.actionItems.map((a: string) => this.sanitizeText(a))
           : undefined,
       };
 
