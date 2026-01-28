@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import { PDFDocument as PDFLibDocument, PDFName } from 'pdf-lib';
 import { PDFContent, PDFSection, VideoMetadata, ContentSummary, ExecutiveBrief } from '../types/index.js';
 import { PDFConfig } from '../types/config.js';
 import { formatTimestamp, buildTimestampUrl, cleanSubtitleText, deduplicateSubtitles, cleanMixedLanguageText } from '../utils/index.js';
@@ -41,6 +42,28 @@ function normalizeTextForPDF(text: string): string {
 
   // 6. Private Use Area 문자 제거
   normalized = normalized.replace(/[\uE000-\uF8FF]/g, '');
+
+  // 7. 확장 라틴 문자 처리 (PDFKit 폰트 폴백 문제 방지)
+  // 일반적인 확장 라틴을 기본 ASCII로 변환
+  const latinMap: Record<string, string> = {
+    'ħ': 'h', 'Ħ': 'H',
+    'ı': 'i', 'İ': 'I', 'Ĩ': 'I', 'ĩ': 'i',
+    'ł': 'l', 'Ł': 'L',
+    'ñ': 'n', 'Ñ': 'N',
+    'ø': 'o', 'Ø': 'O',
+    'ß': 'ss',
+    'þ': 'th', 'Þ': 'Th',
+    'đ': 'd', 'Đ': 'D',
+  };
+  for (const [from, to] of Object.entries(latinMap)) {
+    normalized = normalized.replace(new RegExp(from, 'g'), to);
+  }
+
+  // 8. 나머지 확장 라틴 문자 제거 (Latin Extended-A, B)
+  normalized = normalized.replace(/[\u0100-\u024F]/g, '');
+
+  // 9. 쓰레기 한글 패턴 제거 (한글+ASCII 비정상 혼합)
+  normalized = normalized.replace(/[가-힣][a-z`_]{1,3}[가-힣]/gi, '');
 
   return normalized;
 }
@@ -265,18 +288,28 @@ export class PDFGenerator {
           this.renderTableOfContents(doc, content.sections, content.metadata.id);
         }
 
-        // 총 페이지 수 미리 계산 (표지 + 목차? + 섹션들)
-        const totalPages =
-          1 + (this.config.includeToc ? 1 : 0) + content.sections.length;
+        // 섹션 필터링: 최종 처리 후 콘텐츠가 부족한 섹션 제외
+        const validSections = content.sections.filter(section => {
+          const subtitleTexts = section.subtitles.map(sub => {
+            const cleaned = cleanSubtitleText(sub.text);
+            return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
+          });
+          const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+          const totalWords = dedupedTexts.join(' ').split(/\s+/).filter(w => w.length > 0).length;
+          return totalWords >= 10; // 최종 처리 후 10단어 이상만 포함
+        });
+
+        // 총 페이지 수 계산 (표지 + 목차? + 유효 섹션들)
+        const totalPages = 1 + (this.config.includeToc ? 1 : 0) + validSections.length;
         let currentPage = 1; // 표지는 1페이지
 
         // PDF 아웃라인(북마크) 추가
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const outline = (doc as any).outline;
 
-        // 본문 페이지 렌더링
-        for (let i = 0; i < content.sections.length; i++) {
-          const section = content.sections[i];
+        // 본문 페이지 렌더링 (유효 섹션만)
+        for (let i = 0; i < validSections.length; i++) {
+          const section = validSections[i];
 
           if (i > 0 || this.config.includeToc) {
             doc.addPage();
@@ -301,9 +334,16 @@ export class PDFGenerator {
 
         doc.end();
 
-        writeStream.on('finish', () => {
-          logger.success(`PDF 생성 완료: ${outputPath}`);
-          resolve();
+        writeStream.on('finish', async () => {
+          try {
+            await this.removeEmptyPages(outputPath);
+            logger.success(`PDF 생성 완료: ${outputPath}`);
+            resolve();
+          } catch (e) {
+            // Post-processing failure shouldn't fail the whole generation
+            logger.warn(`빈 페이지 제거 실패: ${e}`);
+            resolve();
+          }
         });
 
         writeStream.on('error', reject);
@@ -1654,6 +1694,12 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(0.3);
 
+    // 남은 페이지 공간 확인 - 최소 100px 이상 있어야 자막 렌더링
+    const remainingSpace = doc.page.height - doc.y - theme.margins.bottom - 40; // 40px for footer
+    if (remainingSpace < 100) {
+      doc.addPage();
+    }
+
     // 섹션 요약 (있는 경우) - NFC 정규화 적용
     if (section.sectionSummary && section.sectionSummary.summary) {
       doc
@@ -1692,8 +1738,19 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
         .fontSize(theme.fonts.body.size)
         .fillColor(theme.colors.text);
 
+      // 남은 공간 계산 - 오버플로우 방지
+      const maxY = doc.page.height - theme.margins.bottom - 50; // 50px for footer
+
       for (const text of dedupedTexts) {
-        doc.text(text);
+        // 남은 공간이 부족하면 중단 (오버플로우 방지)
+        if (doc.y >= maxY) {
+          doc
+            .fontSize(9)
+            .fillColor(theme.colors.secondary)
+            .text('(자막 계속...)', { align: 'right' });
+          break;
+        }
+        doc.text(text, { width: pageWidth });
       }
     }
   }
@@ -1740,6 +1797,13 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(0.5);
 
+    // 남은 페이지 공간 확인 - 최소 100px 이상 있어야 자막 렌더링
+    const remainingSpace = doc.page.height - doc.y - theme.margins.bottom - 40; // 40px for footer
+    if (remainingSpace < 100) {
+      doc.addPage();
+      doc.x = rightX; // Restore x position after new page
+    }
+
     // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
     const subtitleTexts = section.subtitles.map((sub) => {
       const cleaned = cleanSubtitleText(sub.text);
@@ -1759,7 +1823,18 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
         .fontSize(theme.fonts.body.size)
         .fillColor(theme.colors.text);
 
+      // 남은 공간 계산 - 오버플로우 방지
+      const maxY = doc.page.height - theme.margins.bottom - 50; // 50px for footer
+
       for (const text of dedupedTexts) {
+        // 남은 공간이 부족하면 중단 (오버플로우 방지)
+        if (doc.y >= maxY) {
+          doc
+            .fontSize(9)
+            .fillColor(theme.colors.secondary)
+            .text('(자막 계속...)', rightX, doc.y, { width: halfWidth, align: 'right' });
+          break;
+        }
         doc.text(text, rightX, doc.y, { width: halfWidth });
       }
     }
@@ -1808,6 +1883,56 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     if (thaiRegex.test(text)) return 'th';
 
     return 'en';
+  }
+
+  /**
+   * PDF 후처리 - 빈 페이지 제거
+   * 콘텐츠 스트림 크기가 200바이트 미만인 페이지를 제거
+   */
+  private async removeEmptyPages(pdfPath: string): Promise<void> {
+    const existingPdfBytes = await fs.promises.readFile(pdfPath);
+    const pdfDoc = await PDFLibDocument.load(existingPdfBytes);
+
+    const pages = pdfDoc.getPages();
+    const pagesToRemove: number[] = [];
+
+    for (let i = 0; i < pages.length; i++) {
+      // 첫 2페이지 (표지 + 목차) 스킵
+      if (i < 2) continue;
+
+      const page = pages[i];
+      const node = page.node;
+
+      // 콘텐츠 스트림 참조 가져오기
+      const contentsRef = node.get(PDFName.of('Contents'));
+      let contentSize = 0;
+
+      if (contentsRef) {
+        // 실제 콘텐츠 스트림 크기 확인
+        const resolved = node.context.lookup(contentsRef);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const resolvedAny = resolved as any;
+        if (resolvedAny && resolvedAny.contents) {
+          contentSize = resolvedAny.contents.length;
+        }
+      }
+
+      // 300바이트 미만의 페이지는 빈 페이지로 간주 (오버플로우 페이지 포함)
+      if (contentSize < 300) {
+        pagesToRemove.push(i);
+      }
+    }
+
+    // 역순으로 제거하여 인덱스 유지
+    for (let i = pagesToRemove.length - 1; i >= 0; i--) {
+      pdfDoc.removePage(pagesToRemove[i]);
+    }
+
+    if (pagesToRemove.length > 0) {
+      const pdfBytes = await pdfDoc.save();
+      await fs.promises.writeFile(pdfPath, pdfBytes);
+      logger.debug(`빈 페이지 ${pagesToRemove.length}개 제거됨`);
+    }
   }
 
   /**

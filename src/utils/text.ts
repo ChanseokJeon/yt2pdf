@@ -37,6 +37,30 @@ export function decodeHtmlEntities(text: string): string {
 }
 
 /**
+ * 쓰레기 텍스트 감지
+ * - 한글+ASCII 비정상 혼합 (굉b, 굄x 등)
+ * - 의미없는 기호 반복
+ * - 자음/모음만 반복
+ */
+export function isGarbageText(text: string): boolean {
+  if (!text || text.length < 3) return false;
+
+  // 패턴 1: 한글 사이에 랜덤 ASCII (굉b, 굄x 등)
+  const mixedPattern = /[가-힣][a-z`_]{1,3}[가-힣]/i;
+
+  // 패턴 2: 의미없는 기호 반복
+  const symbolPattern = /[`_\\㏖]{2,}/;
+
+  // 패턴 3: 자음/모음만 반복 (ㅁ` uob 등)
+  const jamoPattern = /[ㄱ-ㅎㅏ-ㅣ]{2,}[`_\s]/;
+
+  // 패턴 4: 한글+숫자+기호 비정상 혼합
+  const weirdMixPattern = /[가-힣]\d+[:;][가-힣]/;
+
+  return mixedPattern.test(text) || symbolPattern.test(text) || jamoPattern.test(text) || weirdMixPattern.test(text);
+}
+
+/**
  * 연속 중복 라인 제거 및 병합
  * YouTube 자동 자막에서 겹치는 부분을 제거하고 자연스럽게 병합
  */
@@ -88,7 +112,9 @@ export function deduplicateSubtitles(texts: string[]): string[] {
     }
   }
 
-  return result;
+  // 6단계: 쓰레기 텍스트 제거
+  const finalResult = result.filter(text => !isGarbageText(text));
+  return finalResult;
 }
 
 /**

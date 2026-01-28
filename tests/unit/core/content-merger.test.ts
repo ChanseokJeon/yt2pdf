@@ -26,15 +26,20 @@ describe('ContentMerger', () => {
     availableCaptions: [],
   };
 
+  // AND 조건 충족: 단어 15개 이상 + 음성 비율 20% 이상
   const mockSubtitles: SubtitleResult = {
     source: 'youtube',
     language: 'ko',
     segments: [
-      { start: 0, end: 10, text: 'Segment 1' },
-      { start: 30, end: 40, text: 'Segment 2' },
-      { start: 60, end: 70, text: 'Segment 3' },
-      { start: 90, end: 100, text: 'Segment 4' },
-      { start: 120, end: 130, text: 'Segment 5' },
+      // Section 0 (0-60s): 30s speech, ~20 words
+      { start: 0, end: 15, text: 'This is the first segment of the video with many words to fill the content requirement' },
+      { start: 30, end: 45, text: 'And this is the second segment here with additional words for testing purposes today' },
+      // Section 1 (60-120s): 30s speech, ~20 words
+      { start: 60, end: 75, text: 'Now we are in the third segment text with extra content to meet the threshold requirement' },
+      { start: 90, end: 105, text: 'The fourth segment continues the story and adds more words to ensure proper filtering' },
+      // Section 2 (120-180s): 30s speech, ~20 words
+      { start: 120, end: 135, text: 'Finally the fifth segment wraps it up nicely with enough words to pass the filter' },
+      { start: 150, end: 165, text: 'And here is a sixth segment to make sure we have enough content for the last section' },
     ],
   };
 
@@ -55,18 +60,20 @@ describe('ContentMerger', () => {
     it('should match subtitles to correct sections', () => {
       const content = merger.merge(mockMetadata, mockSubtitles, mockScreenshots);
 
-      // 0-60초 구간
+      // 0-60초 구간 (2개 세그먼트)
       expect(content.sections[0].subtitles).toHaveLength(2);
-      expect(content.sections[0].subtitles[0].text).toBe('Segment 1');
-      expect(content.sections[0].subtitles[1].text).toBe('Segment 2');
+      expect(content.sections[0].subtitles[0].text).toContain('first segment');
+      expect(content.sections[0].subtitles[1].text).toContain('second segment');
 
-      // 60-120초 구간
+      // 60-120초 구간 (2개 세그먼트)
       expect(content.sections[1].subtitles).toHaveLength(2);
-      expect(content.sections[1].subtitles[0].text).toBe('Segment 3');
+      expect(content.sections[1].subtitles[0].text).toContain('third segment');
+      expect(content.sections[1].subtitles[1].text).toContain('fourth segment');
 
-      // 120-180초 구간
-      expect(content.sections[2].subtitles).toHaveLength(1);
-      expect(content.sections[2].subtitles[0].text).toBe('Segment 5');
+      // 120-180초 구간 (2개 세그먼트)
+      expect(content.sections[2].subtitles).toHaveLength(2);
+      expect(content.sections[2].subtitles[0].text).toContain('fifth segment');
+      expect(content.sections[2].subtitles[1].text).toContain('sixth segment');
     });
 
     it('should include screenshot in each section', () => {

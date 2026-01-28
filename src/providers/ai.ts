@@ -388,7 +388,12 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
         // 세그먼트에 번역 적용 (검증 및 재시도 포함)
         for (let j = 0; j < batch.length; j++) {
           const original = batch[j];
-          let translatedText = translatedTexts.get(j) || original.text;
+          let translatedText = translatedTexts.get(j);
+          if (!translatedText) {
+            // 번역 파싱 실패시 원문 유지하되 경고 로그
+            translatedText = original.text;
+            logger.warn(`번역 파싱 실패, 원문 유지: ${original.text.slice(0, 30)}...`);
+          }
 
           // 번역 검증: 목표 언어가 한국어인 경우 한글 비율 확인
           if (targetLanguage === 'ko' && translatedText) {
@@ -421,20 +426,20 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
                   const retryTotalChars = retryText.replace(/[\s\d\W]/g, '').length;
                   const retryKoreanRatio = retryTotalChars > 0 ? retryKoreanChars / retryTotalChars : 0;
 
-                  // 재시도 결과가 더 나으면 사용, 아니면 원문 유지
+                  // 재시도 결과가 더 나으면 사용, 아니면 번역 불가 표시
                   if (retryKoreanRatio >= 0.5) {
                     translatedText = retryText;
                     logger.debug(`재시도 성공 (한글 ${(retryKoreanRatio * 100).toFixed(0)}%)`);
                   } else {
-                    // 재시도도 실패하면 원문 유지 (깨진 번역보다 나음)
-                    translatedText = original.text;
-                    logger.warn(`재시도 실패, 원문 유지: ${original.text.slice(0, 30)}...`);
+                    // 재시도도 실패하면 번역 불가 표시 (영어 원문 노출 방지)
+                    translatedText = `[번역 불가]`;
+                    logger.warn(`재시도 실패, 번역 불가 처리: ${original.text.slice(0, 30)}...`);
                   }
                 }
               } catch {
-                // 재시도 API 호출 실패 시 원문 유지
-                translatedText = original.text;
-                logger.warn(`재시도 API 실패, 원문 유지`);
+                // 재시도 API 호출 실패 시 번역 불가 표시
+                translatedText = `[번역 불가]`;
+                logger.warn(`재시도 API 실패, 번역 불가 처리`);
               }
             }
           }
