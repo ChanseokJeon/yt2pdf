@@ -1663,10 +1663,10 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 스크린샷
+    // 스크린샷 (200pt로 축소)
     try {
       doc.image(section.screenshot.imagePath, {
-        fit: [pageWidth, 280],
+        fit: [pageWidth, 200],
         align: 'center',
       });
     } catch {
@@ -1692,29 +1692,95 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
         .text(timestamp);
     }
 
-    doc.moveDown(0.3);
+    doc.moveDown(0.5);
 
-    // 남은 페이지 공간 확인 - 최소 100px 이상 있어야 자막 렌더링
+    // 남은 페이지 공간 확인 - 최소 100px 이상 있어야 콘텐츠 렌더링
     const remainingSpace = doc.page.height - doc.y - theme.margins.bottom - 40; // 40px for footer
     if (remainingSpace < 100) {
       doc.addPage();
     }
 
-    // 섹션 요약 (있는 경우) - NFC 정규화 적용
-    if (section.sectionSummary && section.sectionSummary.summary) {
+    // 💡 핵심 포인트 (keyPoints)
+    if (section.sectionSummary?.keyPoints && section.sectionSummary.keyPoints.length > 0) {
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(11)
+        .fillColor(theme.colors.primary)
+        .text('💡 핵심 포인트', { width: pageWidth });
+      doc.moveDown(0.3);
+
       doc
         .font(theme.fonts.body.name)
         .fontSize(10)
-        .fillColor(theme.colors.primary)
-        .text(normalizeTextForPDF(`💡 ${section.sectionSummary.summary}`), { width: pageWidth });
+        .fillColor(theme.colors.text);
 
-      if (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) {
-        doc.moveDown(0.2);
-        doc.fillColor(theme.colors.secondary).fontSize(9);
-        for (const point of section.sectionSummary.keyPoints) {
-          doc.text(normalizeTextForPDF(`  • ${point}`), { width: pageWidth });
+      for (const point of section.sectionSummary.keyPoints) {
+        doc.text(normalizeTextForPDF(`• ${point}`), { width: pageWidth, indent: 10 });
+      }
+      doc.moveDown(0.5);
+    }
+
+    // 📋 주요 정보 (mainInformation - paragraphs + bullets)
+    if (section.sectionSummary?.mainInformation) {
+      const mainInfo = section.sectionSummary.mainInformation;
+
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(11)
+        .fillColor(theme.colors.primary)
+        .text('📋 주요 정보', { width: pageWidth });
+      doc.moveDown(0.3);
+
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(10)
+        .fillColor(theme.colors.text);
+
+      // Paragraphs
+      if (mainInfo.paragraphs && mainInfo.paragraphs.length > 0) {
+        for (const para of mainInfo.paragraphs) {
+          doc.text(normalizeTextForPDF(para), { width: pageWidth });
+          doc.moveDown(0.2);
         }
       }
+
+      // Bullets
+      if (mainInfo.bullets && mainInfo.bullets.length > 0) {
+        for (const bullet of mainInfo.bullets) {
+          doc.text(normalizeTextForPDF(`• ${bullet}`), { width: pageWidth, indent: 10 });
+        }
+      }
+      doc.moveDown(0.5);
+    }
+
+    // 💬 인용 (notableQuotes)
+    if (section.sectionSummary?.notableQuotes && section.sectionSummary.notableQuotes.length > 0) {
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(11)
+        .fillColor(theme.colors.primary)
+        .text('💬 주목할 만한 인용', { width: pageWidth });
+      doc.moveDown(0.3);
+
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(9)
+        .fillColor(theme.colors.secondary);
+
+      for (const quote of section.sectionSummary.notableQuotes) {
+        doc.text(normalizeTextForPDF(`"${quote}"`), { width: pageWidth, indent: 10 });
+        doc.moveDown(0.2);
+      }
+      doc.moveDown(0.3);
+    }
+
+    // 한줄 요약 (summary - 참고용으로 맨 마지막에 작게 표시)
+    if (section.sectionSummary?.summary) {
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(9)
+        .fillColor(theme.colors.secondary)
+        .text(normalizeTextForPDF(`💡 ${section.sectionSummary.summary}`), { width: pageWidth });
       doc.moveDown(0.5);
     }
 

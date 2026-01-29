@@ -98,9 +98,46 @@ export interface ScreenshotOptions {
 // PDF 관련
 // ============================================================
 
+/**
+ * 핵심 포인트
+ */
+export interface KeyPoint {
+  text: string;
+  category?: 'insight' | 'action' | 'metric' | 'definition';
+}
+
+/**
+ * 주요 정보
+ */
+export interface MainInformation {
+  paragraphs: string[];
+  bullets: string[];
+}
+
+/**
+ * 인용문
+ */
+export interface NotableQuote {
+  text: string;
+  speaker?: string;
+}
+
+/**
+ * 향상된 섹션 콘텐츠 (AI 추출 결과)
+ */
+export interface EnhancedSectionContent {
+  translatedText: string;
+  keyPoints: string[];
+  mainInformation: MainInformation;
+  notableQuotes: NotableQuote[];
+  oneLiner: string;
+}
+
 export interface SectionSummary {
   summary: string;
   keyPoints: string[];
+  mainInformation?: MainInformation;
+  notableQuotes?: string[];  // Simplified from NotableQuote[] to string[] for PDF rendering
 }
 
 export interface PDFSection {

@@ -19,6 +19,7 @@ import { YouTubeProvider } from '../providers/youtube.js';
 import { FFmpegWrapper } from '../providers/ffmpeg.js';
 import { WhisperProvider } from '../providers/whisper.js';
 import { AIProvider } from '../providers/ai.js';
+import { UnifiedContentProcessor } from '../providers/unified-ai.js';
 import { SubtitleExtractor } from './subtitle-extractor.js';
 import { ScreenshotCapturer } from './screenshot-capturer.js';
 import { ContentMerger } from './content-merger.js';
@@ -57,6 +58,7 @@ export class Orchestrator {
   private ffmpeg: FFmpegWrapper;
   private whisper?: WhisperProvider;
   private ai?: AIProvider;
+  private unifiedProcessor?: UnifiedContentProcessor;
 
   constructor(options: OrchestratorOptions) {
     this.config = options.config;
@@ -77,6 +79,15 @@ export class Orchestrator {
         this.ai = new AIProvider(undefined, this.config.ai.model);
       } catch {
         // AI 사용 불가
+      }
+
+      try {
+        this.unifiedProcessor = new UnifiedContentProcessor(
+          process.env.OPENAI_API_KEY,
+          this.config.ai.model || 'gpt-4o-mini'
+        );
+      } catch {
+        // 통합 프로세서 사용 불가
       }
     }
   }
@@ -333,8 +344,75 @@ export class Orchestrator {
         content.summary = summary;
       }
 
-      // 5.5. 챕터별/섹션별 요약 생성
-      if (this.config.summary.enabled && this.config.summary.perSection && this.ai && content.sections.length > 0) {
+      // 5.5. 통합 AI 처리 (번역 + 섹션 요약을 한 번에 처리)
+      if (this.unifiedProcessor && this.config.summary.enabled && this.config.summary.perSection && content.sections.length > 0) {
+        try {
+          const sectionType = useChapters ? '챕터별' : '섹션별';
+          this.updateState({ currentStep: `통합 AI 처리 (번역 + ${sectionType} 요약)`, progress: 77 });
+          logger.info('통합 AI 처리 시작...');
+
+          const summaryLang = this.config.summary.language || this.config.translation.defaultLanguage;
+          const unifiedResult = await this.unifiedProcessor.processAllSections(
+            content.sections.map(s => ({
+              timestamp: s.timestamp,
+              subtitles: s.subtitles,
+            })),
+            {
+              videoId,
+              sourceLanguage: subtitles.language || 'en',
+              targetLanguage: summaryLang,
+              maxKeyPoints: this.config.summary.sectionKeyPoints || 4,
+              includeQuotes: true,
+              enableCache: this.config.cache.enabled,
+            }
+          );
+
+          // 결과 적용
+          for (const section of content.sections) {
+            const enhanced = unifiedResult.sections.get(section.timestamp);
+            if (enhanced) {
+              // 번역된 자막 업데이트 (번역이 필요했던 경우)
+              if (enhanced.translatedText && subtitles.language !== summaryLang) {
+                section.subtitles = [{
+                  start: section.timestamp,
+                  end: section.timestamp + 60,
+                  text: enhanced.translatedText,
+                }];
+              }
+
+              // 섹션 요약 업데이트
+              section.sectionSummary = {
+                summary: enhanced.oneLiner,
+                keyPoints: enhanced.keyPoints,
+                mainInformation: enhanced.mainInformation,
+                notableQuotes: enhanced.notableQuotes?.map(q => q.text) || [],
+              };
+
+              // 챕터 제목 유지
+              if (useChapters && section.chapterTitle) {
+                // 챕터 제목은 유지
+              }
+            }
+          }
+
+          // 전체 요약 설정 (이미 있으면 덮어쓰지 않음)
+          if (!content.summary && unifiedResult.globalSummary) {
+            content.summary = {
+              summary: unifiedResult.globalSummary.summary,
+              keyPoints: unifiedResult.globalSummary.keyPoints,
+              language: summaryLang,
+            };
+          }
+
+          logger.success(`통합 AI 처리 완료: ${unifiedResult.totalTokensUsed} 토큰 사용`);
+        } catch (e) {
+          logger.warn('통합 AI 처리 실패, 기존 방식으로 폴백', e as Error);
+          // 폴백: 기존 방식으로 계속 진행
+        }
+      }
+
+      // 5.6. 챕터별/섹션별 요약 생성 (통합 처리 실패 시 또는 통합 프로세서 없을 때)
+      if (this.config.summary.enabled && this.config.summary.perSection && this.ai && content.sections.length > 0 && !this.unifiedProcessor) {
         const sectionType = useChapters ? '챕터별' : '섹션별';
         this.updateState({ currentStep: `${sectionType} 요약 생성`, progress: 77 });
         logger.info(`${sectionType} 요약 생성 중... (${content.sections.length}개)`);
