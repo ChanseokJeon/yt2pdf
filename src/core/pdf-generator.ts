@@ -1772,6 +1772,16 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.3);
     }
 
+    // 한줄 요약 (summary - 참고용으로 맨 마지막에 작게 표시)
+    if (section.sectionSummary?.summary) {
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(9)
+        .fillColor(theme.colors.secondary)
+        .text(normalizeTextForPDF(`💡 ${section.sectionSummary.summary}`), { width: pageWidth });
+      doc.moveDown(0.5);
+    }
+
     // 향상된 콘텐츠가 있으면 원본 자막 건너뜀 (중복 방지)
     const hasEnhancedContent = section.sectionSummary && (
       (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) ||
