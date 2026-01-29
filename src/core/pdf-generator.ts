@@ -1784,39 +1784,51 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
-    const subtitleTexts = section.subtitles.map((sub) => {
-      const cleaned = cleanSubtitleText(sub.text);
-      return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
-    });
-    const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+    // 향상된 콘텐츠가 있으면 원본 자막 건너뜀 (중복 방지)
+    const hasEnhancedContent = section.sectionSummary && (
+      (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) ||
+      (section.sectionSummary.mainInformation && (
+        (section.sectionSummary.mainInformation.paragraphs && section.sectionSummary.mainInformation.paragraphs.length > 0) ||
+        (section.sectionSummary.mainInformation.bullets && section.sectionSummary.mainInformation.bullets.length > 0)
+      )) ||
+      section.sectionSummary.summary
+    );
 
-    // 자막이 없는 경우 안내 메시지
-    if (dedupedTexts.length === 0) {
-      doc
-        .font(theme.fonts.body.name)
-        .fontSize(theme.fonts.body.size)
-        .fillColor(theme.colors.secondary)
-        .text('(이 구간에 자막이 없습니다)', { align: 'center' });
-    } else {
-      doc
-        .font(theme.fonts.body.name)
-        .fontSize(theme.fonts.body.size)
-        .fillColor(theme.colors.text);
+    if (!hasEnhancedContent) {
+      // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
+      const subtitleTexts = section.subtitles.map((sub) => {
+        const cleaned = cleanSubtitleText(sub.text);
+        return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
+      });
+      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
 
-      // 남은 공간 계산 - 오버플로우 방지
-      const maxY = doc.page.height - theme.margins.bottom - 50; // 50px for footer
+      // 자막이 없는 경우 안내 메시지
+      if (dedupedTexts.length === 0) {
+        doc
+          .font(theme.fonts.body.name)
+          .fontSize(theme.fonts.body.size)
+          .fillColor(theme.colors.secondary)
+          .text('(이 구간에 자막이 없습니다)', { align: 'center' });
+      } else {
+        doc
+          .font(theme.fonts.body.name)
+          .fontSize(theme.fonts.body.size)
+          .fillColor(theme.colors.text);
 
-      for (const text of dedupedTexts) {
-        // 남은 공간이 부족하면 중단 (오버플로우 방지)
-        if (doc.y >= maxY) {
-          doc
-            .fontSize(9)
-            .fillColor(theme.colors.secondary)
-            .text('(자막 계속...)', { align: 'right' });
-          break;
+        // 남은 공간 계산 - 오버플로우 방지
+        const maxY = doc.page.height - theme.margins.bottom - 50; // 50px for footer
+
+        for (const text of dedupedTexts) {
+          // 남은 공간이 부족하면 중단 (오버플로우 방지)
+          if (doc.y >= maxY) {
+            doc
+              .fontSize(9)
+              .fillColor(theme.colors.secondary)
+              .text('(자막 계속...)', { align: 'right' });
+            break;
+          }
+          doc.text(text, { width: pageWidth });
         }
-        doc.text(text, { width: pageWidth });
       }
     }
   }
