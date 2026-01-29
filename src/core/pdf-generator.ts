@@ -1528,7 +1528,9 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     // 원본 링크 (클릭 가능)
     const youtubeUrl = `https://youtube.com/watch?v=${metadata.id}`;
-    doc.fillColor(theme.colors.link).text(youtubeUrl, { link: youtubeUrl, align: 'center' });
+    doc.fillColor(theme.colors.link);
+    doc.text('원본: ', { continued: true, align: 'center' });
+    doc.text(youtubeUrl, { link: youtubeUrl, align: 'center' });
 
     doc.fillColor(theme.colors.secondary);
     doc.text(`생성일: ${new Date().toISOString().split('T')[0]}`, { align: 'center' });
@@ -1782,14 +1784,11 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 향상된 콘텐츠가 있으면 원본 자막 건너뜀 (중복 방지)
+    // 자막 렌더링 - AI 향상 콘텐츠가 없는 경우에만
     const hasEnhancedContent = section.sectionSummary && (
       (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) ||
-      (section.sectionSummary.mainInformation && (
-        (section.sectionSummary.mainInformation.paragraphs && section.sectionSummary.mainInformation.paragraphs.length > 0) ||
-        (section.sectionSummary.mainInformation.bullets && section.sectionSummary.mainInformation.bullets.length > 0)
-      )) ||
-      section.sectionSummary.summary
+      (section.sectionSummary.mainInformation?.paragraphs && section.sectionSummary.mainInformation.paragraphs.length > 0) ||
+      (section.sectionSummary.mainInformation?.bullets && section.sectionSummary.mainInformation.bullets.length > 0)
     );
 
     if (!hasEnhancedContent) {
