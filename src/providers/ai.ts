@@ -3,8 +3,37 @@
  */
 
 import OpenAI from 'openai';
-import { ErrorCode, Yt2PdfError, SubtitleSegment, VideoType, Chapter, ExecutiveBrief, VideoMetadata } from '../types/index.js';
+import {
+  ErrorCode,
+  Yt2PdfError,
+  SubtitleSegment,
+  VideoType,
+  Chapter,
+  ExecutiveBrief,
+  VideoMetadata,
+} from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { formatTimestamp } from '../utils/file.js';
+
+/**
+ * ISO 639-1 언어 코드 -> 언어 이름 매핑
+ */
+const LANGUAGE_MAP: Record<string, string> = {
+  ko: '한국어',
+  en: 'English',
+  ja: '日本語',
+  zh: '中文',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+};
+
+/**
+ * 언어 코드를 언어 이름으로 변환
+ */
+function getLanguageName(code: string): string {
+  return LANGUAGE_MAP[code] || code;
+}
 
 export interface SummaryOptions {
   maxLength?: number; // 최대 문자 수
@@ -95,7 +124,10 @@ export class AIProvider {
   /**
    * 자막 텍스트를 요약
    */
-  async summarize(segments: SubtitleSegment[], options: SummaryOptions = {}): Promise<SummaryResult> {
+  async summarize(
+    segments: SubtitleSegment[],
+    options: SummaryOptions = {}
+  ): Promise<SummaryResult> {
     const { maxLength = 500, language = 'ko', style = 'brief' } = options;
 
     // 자막 텍스트 합치기
@@ -110,18 +142,9 @@ export class AIProvider {
     }
 
     const stylePrompt =
-      style === 'detailed'
-        ? '상세하고 포괄적인 요약을 작성하세요.'
-        : '핵심만 간결하게 요약하세요.';
+      style === 'detailed' ? '상세하고 포괄적인 요약을 작성하세요.' : '핵심만 간결하게 요약하세요.';
 
-    const languageMap: Record<string, string> = {
-      ko: '한국어',
-      en: 'English',
-      ja: '日本語',
-      zh: '中文',
-    };
-
-    const targetLang = languageMap[language] || language;
+    const targetLang = getLanguageName(language);
 
     try {
       logger.debug(`AI 요약 시작: ${segments.length}개 세그먼트, 언어: ${language}`);
@@ -195,18 +218,15 @@ KEY_POINTS:
       return [];
     }
 
-    const languageMap: Record<string, string> = {
-      ko: '한국어',
-      en: 'English',
-      ja: '日本語',
-      zh: '中文',
-    };
-    const targetLang = languageMap[language] || language;
+    const targetLang = getLanguageName(language);
 
     // 섹션 텍스트 준비
     const sectionTexts = sections.map((section, idx) => {
-      const text = section.subtitles.map((s) => s.text).join(' ').trim();
-      return `[섹션 ${idx}] (${this.formatTimestamp(section.timestamp)})\n${text}`;
+      const text = section.subtitles
+        .map((s) => s.text)
+        .join(' ')
+        .trim();
+      return `[섹션 ${idx}] (${formatTimestamp(section.timestamp)})\n${text}`;
     });
 
     try {
@@ -276,7 +296,9 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
         }
       }
 
-      logger.debug(`섹션별 요약 완료: ${results.filter((r) => r.summary).length}/${sections.length}개 성공`);
+      logger.debug(
+        `섹션별 요약 완료: ${results.filter((r) => r.summary).length}/${sections.length}개 성공`
+      );
 
       return results;
     } catch (error) {
@@ -292,16 +314,133 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
   }
 
   /**
-   * 타임스탬프 포맷
+   * 한국어 번역 품질 검증 및 재시도
    */
-  private formatTimestamp(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  private async validateAndRetryKoreanTranslation(
+    originalText: string,
+    translatedText: string
+  ): Promise<string> {
+    const koreanChars = (translatedText.match(/[\uAC00-\uD7AF]/g) || []).length;
+    const totalChars = translatedText.replace(/[\s\d\W]/g, '').length;
+    const koreanRatio = totalChars > 0 ? koreanChars / totalChars : 0;
+
+    // 한글이 50% 미만이면 재시도 (최대 1회)
+    if (koreanRatio >= 0.5 || totalChars <= 5) {
+      return translatedText;
     }
-    return `${m}:${s.toString().padStart(2, '0')}`;
+
+    logger.warn(`번역 품질 낮음 (한글 ${(koreanRatio * 100).toFixed(0)}%), 재시도 중...`);
+    try {
+      const retryResponse = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: `이전 번역에 영어가 혼합되었습니다. 반드시 100% 한국어로만 번역하세요. 기술 용어도 한글로 음역하거나 설명하세요.`,
+          },
+          {
+            role: 'user',
+            content: `한국어로 번역: ${originalText}`,
+          },
+        ],
+        temperature: 0.2,
+        max_completion_tokens: 500,
+      });
+      const retryText = retryResponse.choices[0]?.message?.content?.trim();
+      if (retryText) {
+        const retryKoreanChars = (retryText.match(/[\uAC00-\uD7AF]/g) || []).length;
+        const retryTotalChars = retryText.replace(/[\s\d\W]/g, '').length;
+        const retryKoreanRatio = retryTotalChars > 0 ? retryKoreanChars / retryTotalChars : 0;
+
+        if (retryKoreanRatio >= 0.5) {
+          logger.debug(`재시도 성공 (한글 ${(retryKoreanRatio * 100).toFixed(0)}%)`);
+          return retryText;
+        } else {
+          logger.warn(`재시도 실패, 번역 불가 처리: ${originalText.slice(0, 30)}...`);
+          return '[번역 불가]';
+        }
+      }
+    } catch {
+      logger.warn(`재시도 API 실패, 번역 불가 처리`);
+    }
+    return '[번역 불가]';
+  }
+
+  /**
+   * 번역 배치 처리
+   */
+  private async translateBatch(
+    batch: SubtitleSegment[],
+    sourceLang: string,
+    targetLang: string,
+    targetLanguage: string
+  ): Promise<SubtitleSegment[]> {
+    const textsToTranslate = batch.map((s, idx) => `[${idx}] ${s.text}`).join('\n');
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: `당신은 전문 번역가입니다. ${sourceLang}에서 ${targetLang}로 자막을 번역하세요.
+
+중요 규칙:
+1. 각 줄의 [번호]를 유지하세요
+2. 번역 결과는 반드시 ${targetLang}로만 작성하세요 - 원문(영어)을 절대 포함하지 마세요
+3. 번역이 어려운 고유명사나 기술 용어도 ${targetLang}로 음역하거나 설명하세요
+4. 불확실해도 반드시 ${targetLang}로만 응답하세요
+
+예시:
+입력: [0] So I actually don't have one unfortunately
+출력: [0] 사실 저는 안타깝게도 하나도 없습니다`,
+        },
+        {
+          role: 'user',
+          content: textsToTranslate,
+        },
+      ],
+      temperature: 0.3,
+      max_completion_tokens: 4000,
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+    const lines = content.split('\n').filter((line) => line.trim());
+
+    // 번역된 텍스트 파싱
+    const translatedTexts: Map<number, string> = new Map();
+    for (const line of lines) {
+      const match = line.match(/^\[(\d+)\]\s*(.+)$/);
+      if (match) {
+        translatedTexts.set(parseInt(match[1], 10), match[2].trim());
+      }
+    }
+
+    // 세그먼트에 번역 적용
+    const result: SubtitleSegment[] = [];
+    for (let j = 0; j < batch.length; j++) {
+      const original = batch[j];
+      let translatedText = translatedTexts.get(j);
+      if (!translatedText) {
+        translatedText = original.text;
+        logger.warn(`번역 파싱 실패, 원문 유지: ${original.text.slice(0, 30)}...`);
+      }
+
+      // 한국어 번역 품질 검증
+      if (targetLanguage === 'ko' && translatedText) {
+        translatedText = await this.validateAndRetryKoreanTranslation(
+          original.text,
+          translatedText
+        );
+      }
+
+      result.push({
+        start: original.start,
+        end: original.end,
+        text: translatedText,
+      });
+    }
+
+    return result;
   }
 
   /**
@@ -321,135 +460,24 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
       };
     }
 
-    const languageMap: Record<string, string> = {
-      ko: '한국어',
-      en: 'English',
-      ja: '日本語',
-      zh: '中文',
-      es: 'Español',
-      fr: 'Français',
-      de: 'Deutsch',
-    };
-
-    const targetLang = languageMap[targetLanguage] || targetLanguage;
-    const sourceLang = sourceLanguage ? languageMap[sourceLanguage] || sourceLanguage : '원본 언어';
+    const targetLang = getLanguageName(targetLanguage);
+    const sourceLang = sourceLanguage ? getLanguageName(sourceLanguage) : '원본 언어';
 
     try {
-      logger.debug(
-        `AI 번역 시작: ${segments.length}개 세그먼트, ${sourceLang} → ${targetLang}`
-      );
+      logger.debug(`AI 번역 시작: ${segments.length}개 세그먼트, ${sourceLang} → ${targetLang}`);
 
-      // 배치로 번역 (최대 50개씩)
       const batchSize = 50;
       const translatedSegments: SubtitleSegment[] = [];
 
       for (let i = 0; i < segments.length; i += batchSize) {
         const batch = segments.slice(i, i + batchSize);
-        const textsToTranslate = batch.map((s, idx) => `[${idx}] ${s.text}`).join('\n');
-
-        const response = await this.client.chat.completions.create({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: `당신은 전문 번역가입니다. ${sourceLang}에서 ${targetLang}로 자막을 번역하세요.
-
-중요 규칙:
-1. 각 줄의 [번호]를 유지하세요
-2. 번역 결과는 반드시 ${targetLang}로만 작성하세요 - 원문(영어)을 절대 포함하지 마세요
-3. 번역이 어려운 고유명사나 기술 용어도 ${targetLang}로 음역하거나 설명하세요
-4. 불확실해도 반드시 ${targetLang}로만 응답하세요
-
-예시:
-입력: [0] So I actually don't have one unfortunately
-출력: [0] 사실 저는 안타깝게도 하나도 없습니다`,
-            },
-            {
-              role: 'user',
-              content: textsToTranslate,
-            },
-          ],
-          temperature: 0.3,
-          max_completion_tokens: 4000,
-        });
-
-        const content = response.choices[0]?.message?.content || '';
-        const lines = content.split('\n').filter((line) => line.trim());
-
-        // 번역된 텍스트 파싱
-        const translatedTexts: Map<number, string> = new Map();
-        for (const line of lines) {
-          const match = line.match(/^\[(\d+)\]\s*(.+)$/);
-          if (match) {
-            translatedTexts.set(parseInt(match[1], 10), match[2].trim());
-          }
-        }
-
-        // 세그먼트에 번역 적용 (검증 및 재시도 포함)
-        for (let j = 0; j < batch.length; j++) {
-          const original = batch[j];
-          let translatedText = translatedTexts.get(j);
-          if (!translatedText) {
-            // 번역 파싱 실패시 원문 유지하되 경고 로그
-            translatedText = original.text;
-            logger.warn(`번역 파싱 실패, 원문 유지: ${original.text.slice(0, 30)}...`);
-          }
-
-          // 번역 검증: 목표 언어가 한국어인 경우 한글 비율 확인
-          if (targetLanguage === 'ko' && translatedText) {
-            const koreanChars = (translatedText.match(/[\uAC00-\uD7AF]/g) || []).length;
-            const totalChars = translatedText.replace(/[\s\d\W]/g, '').length;
-            const koreanRatio = totalChars > 0 ? koreanChars / totalChars : 0;
-
-            // 한글이 50% 미만이면 재시도 (최대 1회)
-            if (koreanRatio < 0.5 && totalChars > 5) {
-              logger.warn(`번역 품질 낮음 (한글 ${(koreanRatio * 100).toFixed(0)}%), 재시도 중...`);
-              try {
-                const retryResponse = await this.client.chat.completions.create({
-                  model: this.model,
-                  messages: [
-                    {
-                      role: 'system',
-                      content: `이전 번역에 영어가 혼합되었습니다. 반드시 100% 한국어로만 번역하세요. 기술 용어도 한글로 음역하거나 설명하세요.`,
-                    },
-                    {
-                      role: 'user',
-                      content: `한국어로 번역: ${original.text}`,
-                    },
-                  ],
-                  temperature: 0.2,
-                  max_completion_tokens: 500,
-                });
-                const retryText = retryResponse.choices[0]?.message?.content?.trim();
-                if (retryText) {
-                  const retryKoreanChars = (retryText.match(/[\uAC00-\uD7AF]/g) || []).length;
-                  const retryTotalChars = retryText.replace(/[\s\d\W]/g, '').length;
-                  const retryKoreanRatio = retryTotalChars > 0 ? retryKoreanChars / retryTotalChars : 0;
-
-                  // 재시도 결과가 더 나으면 사용, 아니면 번역 불가 표시
-                  if (retryKoreanRatio >= 0.5) {
-                    translatedText = retryText;
-                    logger.debug(`재시도 성공 (한글 ${(retryKoreanRatio * 100).toFixed(0)}%)`);
-                  } else {
-                    // 재시도도 실패하면 번역 불가 표시 (영어 원문 노출 방지)
-                    translatedText = `[번역 불가]`;
-                    logger.warn(`재시도 실패, 번역 불가 처리: ${original.text.slice(0, 30)}...`);
-                  }
-                }
-              } catch {
-                // 재시도 API 호출 실패 시 번역 불가 표시
-                translatedText = `[번역 불가]`;
-                logger.warn(`재시도 API 실패, 번역 불가 처리`);
-              }
-            }
-          }
-
-          translatedSegments.push({
-            start: original.start,
-            end: original.end,
-            text: translatedText,
-          });
-        }
+        const batchResult = await this.translateBatch(
+          batch,
+          sourceLang,
+          targetLang,
+          targetLanguage
+        );
+        translatedSegments.push(...batchResult);
       }
 
       logger.debug(`AI 번역 완료: ${translatedSegments.length}개 세그먼트`);
@@ -556,9 +584,18 @@ ${subtitleSample.slice(0, 500)}
       const jsonMatch = content.match(/\{[^}]+\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const validTypes: VideoType[] = ['conference_talk', 'tutorial', 'interview', 'lecture', 'demo', 'discussion', 'unknown'];
+        const validTypes: VideoType[] = [
+          'conference_talk',
+          'tutorial',
+          'interview',
+          'lecture',
+          'demo',
+          'discussion',
+          'unknown',
+        ];
         const type = validTypes.includes(parsed.type) ? parsed.type : 'unknown';
-        const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5;
+        const confidence =
+          typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5;
 
         logger.debug(`영상 유형: ${type} (신뢰도: ${confidence})`);
         return { type, confidence };
@@ -569,6 +606,58 @@ ${subtitleSample.slice(0, 500)}
       logger.warn('영상 유형 분류 실패, unknown 반환');
       return { type: 'unknown', confidence: 0 };
     }
+  }
+
+  /**
+   * 자막을 시간 블록으로 그룹화 (30초 단위)
+   */
+  private groupSegmentsIntoTimeBlocks(
+    segments: SubtitleSegment[]
+  ): Array<{ startTime: number; text: string }> {
+    const timeBlocks: Array<{ startTime: number; text: string }> = [];
+    let currentBlock = { startTime: segments[0].start, texts: [segments[0].text] };
+
+    for (let i = 1; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.start - currentBlock.startTime > 30) {
+        timeBlocks.push({ startTime: currentBlock.startTime, text: currentBlock.texts.join(' ') });
+        currentBlock = { startTime: seg.start, texts: [seg.text] };
+      } else {
+        currentBlock.texts.push(seg.text);
+      }
+    }
+    timeBlocks.push({ startTime: currentBlock.startTime, text: currentBlock.texts.join(' ') });
+
+    return timeBlocks;
+  }
+
+  /**
+   * 파싱된 챕터 데이터를 Chapter 객체 배열로 변환
+   */
+  private parseChaptersFromResponse(
+    parsed: Array<{ title: string; startTime: number }>,
+    lastSegmentEnd: number,
+    minChapterLength: number,
+    maxChapters: number
+  ): Chapter[] {
+    const chapters: Chapter[] = [];
+
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (typeof item.startTime !== 'number' || !item.title) continue;
+
+      const endTime = i + 1 < parsed.length ? parsed[i + 1].startTime : lastSegmentEnd;
+
+      if (endTime - item.startTime >= minChapterLength) {
+        chapters.push({
+          title: item.title,
+          startTime: item.startTime,
+          endTime: endTime,
+        });
+      }
+    }
+
+    return chapters.slice(0, maxChapters);
   }
 
   /**
@@ -587,37 +676,19 @@ ${subtitleSample.slice(0, 500)}
     try {
       logger.debug(`토픽 기반 챕터 생성 시작: ${segments.length}개 세그먼트`);
 
-      // 자막을 시간순으로 그룹화 (30초 단위)
-      const timeBlocks: Array<{ startTime: number; text: string }> = [];
-      let currentBlock = { startTime: segments[0].start, texts: [segments[0].text] };
-
-      for (let i = 1; i < segments.length; i++) {
-        const seg = segments[i];
-        if (seg.start - currentBlock.startTime > 30) {
-          timeBlocks.push({ startTime: currentBlock.startTime, text: currentBlock.texts.join(' ') });
-          currentBlock = { startTime: seg.start, texts: [seg.text] };
-        } else {
-          currentBlock.texts.push(seg.text);
-        }
-      }
-      timeBlocks.push({ startTime: currentBlock.startTime, text: currentBlock.texts.join(' ') });
+      const timeBlocks = this.groupSegmentsIntoTimeBlocks(segments);
 
       // 너무 많으면 샘플링
-      const sampleBlocks = timeBlocks.length > 40
-        ? timeBlocks.filter((_, i) => i % Math.ceil(timeBlocks.length / 40) === 0)
-        : timeBlocks;
+      const sampleBlocks =
+        timeBlocks.length > 40
+          ? timeBlocks.filter((_, i) => i % Math.ceil(timeBlocks.length / 40) === 0)
+          : timeBlocks;
 
-      const blocksText = sampleBlocks.map((b) =>
-        `[${this.formatTimestamp(b.startTime)}] ${b.text.slice(0, 200)}`
-      ).join('\n\n');
+      const blocksText = sampleBlocks
+        .map((b) => `[${formatTimestamp(b.startTime)}] ${b.text.slice(0, 200)}`)
+        .join('\n\n');
 
-      const languageMap: Record<string, string> = {
-        ko: '한국어',
-        en: 'English',
-        ja: '日本語',
-        zh: '中文',
-      };
-      const targetLang = languageMap[language] || language;
+      const targetLang = getLanguageName(language);
 
       const prompt = `다음은 YouTube 영상의 자막입니다. 주제 전환점을 감지하여 챕터를 생성하세요.
 
@@ -640,7 +711,8 @@ ${blocksText}
         messages: [
           {
             role: 'system',
-            content: '당신은 영상 콘텐츠 분석 전문가입니다. 주제 전환을 감지하여 챕터를 생성합니다. JSON 배열로만 응답하세요.',
+            content:
+              '당신은 영상 콘텐츠 분석 전문가입니다. 주제 전환을 감지하여 챕터를 생성합니다. JSON 배열로만 응답하세요.',
           },
           {
             role: 'user',
@@ -653,7 +725,6 @@ ${blocksText}
 
       const content = response.choices[0]?.message?.content?.trim() || '';
 
-      // JSON 배열 파싱
       const jsonMatch = content.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         logger.warn('챕터 JSON 파싱 실패');
@@ -661,38 +732,84 @@ ${blocksText}
       }
 
       const parsed = JSON.parse(jsonMatch[0]) as Array<{ title: string; startTime: number }>;
-
-      // 챕터 생성
-      const chapters: Chapter[] = [];
       const lastSegmentEnd = segments[segments.length - 1].end;
+      const chapters = this.parseChaptersFromResponse(
+        parsed,
+        lastSegmentEnd,
+        minChapterLength,
+        maxChapters
+      );
 
-      for (let i = 0; i < parsed.length; i++) {
-        const item = parsed[i];
-        if (typeof item.startTime !== 'number' || !item.title) continue;
-
-        const endTime = i + 1 < parsed.length
-          ? parsed[i + 1].startTime
-          : lastSegmentEnd;
-
-        // 최소 길이 확인
-        if (endTime - item.startTime >= minChapterLength) {
-          chapters.push({
-            title: item.title,
-            startTime: item.startTime,
-            endTime: endTime,
-          });
-        }
-      }
-
-      // 최대 챕터 수 제한
-      const limitedChapters = chapters.slice(0, maxChapters);
-      logger.debug(`토픽 기반 챕터 생성 완료: ${limitedChapters.length}개`);
-
-      return limitedChapters;
+      logger.debug(`토픽 기반 챕터 생성 완료: ${chapters.length}개`);
+      return chapters;
     } catch (error) {
       logger.warn('토픽 기반 챕터 생성 실패', error as Error);
       return [];
     }
+  }
+
+  /**
+   * AI 응답을 파싱하여 ExecutiveBrief 객체로 변환
+   */
+  private parseExecutiveBriefResponse(
+    parsed: Record<string, unknown>,
+    metadata: VideoMetadata,
+    chapters: Chapter[]
+  ): ExecutiveBrief {
+    return {
+      title: metadata.title,
+      metadata: {
+        channel: metadata.channel,
+        duration: metadata.duration,
+        videoType: metadata.videoType || 'unknown',
+        uploadDate: metadata.uploadDate,
+        videoId: metadata.id,
+      },
+      summary: this.sanitizeText((parsed.summary as string) || ''),
+      keyTakeaways: Array.isArray(parsed.keyTakeaways)
+        ? (parsed.keyTakeaways as string[]).map((t: string) => this.sanitizeText(t))
+        : [],
+      chapterSummaries: Array.isArray(parsed.chapterSummaries)
+        ? (
+            parsed.chapterSummaries as Array<{
+              title?: string;
+              startTime?: number;
+              summary?: string;
+            }>
+          ).map((c, i) => ({
+            title: this.sanitizeText(c.title || chapters[i]?.title || `챕터 ${i + 1}`),
+            startTime: c.startTime ?? chapters[i]?.startTime ?? 0,
+            summary: this.sanitizeText(c.summary || ''),
+          }))
+        : [],
+      actionItems:
+        Array.isArray(parsed.actionItems) && (parsed.actionItems as string[]).length > 0
+          ? (parsed.actionItems as string[]).map((a: string) => this.sanitizeText(a))
+          : undefined,
+    };
+  }
+
+  /**
+   * Executive Brief 생성 실패 시 폴백 brief 생성
+   */
+  private createFallbackBrief(metadata: VideoMetadata, chapters: Chapter[]): ExecutiveBrief {
+    return {
+      title: metadata.title,
+      metadata: {
+        channel: metadata.channel,
+        duration: metadata.duration,
+        videoType: metadata.videoType || 'unknown',
+        uploadDate: metadata.uploadDate,
+        videoId: metadata.id,
+      },
+      summary: '요약을 생성할 수 없습니다.',
+      keyTakeaways: [],
+      chapterSummaries: chapters.map((c) => ({
+        title: c.title,
+        startTime: c.startTime,
+        summary: '',
+      })),
+    };
   }
 
   /**
@@ -705,22 +822,13 @@ ${blocksText}
     options: { language?: string } = {}
   ): Promise<ExecutiveBrief> {
     const { language = 'ko' } = options;
-
-    const languageMap: Record<string, string> = {
-      ko: '한국어',
-      en: 'English',
-      ja: '日本語',
-      zh: '中文',
-    };
-    const targetLang = languageMap[language] || language;
+    const targetLang = getLanguageName(language);
 
     try {
       logger.debug('Executive Brief 생성 시작...');
 
-      // 전체 자막 텍스트 (요약용)
       const fullText = segments.map((s) => s.text).join(' ');
 
-      // 챕터별 자막 매핑
       const chapterTexts = chapters.map((chapter) => {
         const chapterSegments = segments.filter(
           (s) => s.start >= chapter.startTime && s.start < chapter.endTime
@@ -736,14 +844,14 @@ ${blocksText}
 
 제목: ${metadata.title}
 채널: ${metadata.channel}
-영상 길이: ${this.formatTimestamp(metadata.duration)}
+영상 길이: ${formatTimestamp(metadata.duration)}
 영상 유형: ${metadata.videoType || 'unknown'}
 
 전체 자막:
 ${fullText.slice(0, 3000)}
 
 챕터:
-${chapterTexts.map((c) => `[${this.formatTimestamp(c.startTime)}] ${c.title}\n${c.text.slice(0, 300)}`).join('\n\n')}
+${chapterTexts.map((c) => `[${formatTimestamp(c.startTime)}] ${c.title}\n${c.text.slice(0, 300)}`).join('\n\n')}
 
 요구사항 (${targetLang}로 작성):
 1. summary: 3-5문장의 핵심 요약
@@ -777,63 +885,19 @@ ${chapterTexts.map((c) => `[${this.formatTimestamp(c.startTime)}] ${c.title}\n${
 
       const content = response.choices[0]?.message?.content?.trim() || '';
 
-      // JSON 파싱
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error('JSON 파싱 실패');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      // 이상한 유니코드 문자 제거 적용
-      const brief: ExecutiveBrief = {
-        title: metadata.title,
-        metadata: {
-          channel: metadata.channel,
-          duration: metadata.duration,
-          videoType: metadata.videoType || 'unknown',
-          uploadDate: metadata.uploadDate,
-          videoId: metadata.id,
-        },
-        summary: this.sanitizeText(parsed.summary || ''),
-        keyTakeaways: Array.isArray(parsed.keyTakeaways)
-          ? parsed.keyTakeaways.map((t: string) => this.sanitizeText(t))
-          : [],
-        chapterSummaries: Array.isArray(parsed.chapterSummaries)
-          ? parsed.chapterSummaries.map((c: { title?: string; startTime?: number; summary?: string }, i: number) => ({
-              title: this.sanitizeText(c.title || chapters[i]?.title || `챕터 ${i + 1}`),
-              startTime: c.startTime ?? chapters[i]?.startTime ?? 0,
-              summary: this.sanitizeText(c.summary || ''),
-            }))
-          : [],
-        actionItems: Array.isArray(parsed.actionItems) && parsed.actionItems.length > 0
-          ? parsed.actionItems.map((a: string) => this.sanitizeText(a))
-          : undefined,
-      };
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const brief = this.parseExecutiveBriefResponse(parsed, metadata, chapters);
 
       logger.debug('Executive Brief 생성 완료');
       return brief;
     } catch (error) {
       logger.warn('Executive Brief 생성 실패', error as Error);
-
-      // 폴백: 기본 brief 반환
-      return {
-        title: metadata.title,
-        metadata: {
-          channel: metadata.channel,
-          duration: metadata.duration,
-          videoType: metadata.videoType || 'unknown',
-          uploadDate: metadata.uploadDate,
-          videoId: metadata.id,
-        },
-        summary: '요약을 생성할 수 없습니다.',
-        keyTakeaways: [],
-        chapterSummaries: chapters.map((c) => ({
-          title: c.title,
-          startTime: c.startTime,
-          summary: '',
-        })),
-      };
+      return this.createFallbackBrief(metadata, chapters);
     }
   }
 }

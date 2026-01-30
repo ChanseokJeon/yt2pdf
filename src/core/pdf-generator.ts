@@ -123,6 +123,32 @@ const FONTS_DIR = getFontsDir();
 const KOREAN_FONT_REGULAR = path.join(FONTS_DIR, 'NotoSansKR-Regular.ttf');
 const KOREAN_FONT_BOLD = path.join(FONTS_DIR, 'NotoSansKR-Bold.ttf');
 
+/**
+ * Video type labels for display (extracted from multiple methods to avoid DRY violation)
+ */
+const VIDEO_TYPE_LABELS: Record<string, string> = {
+  conference_talk: '컨퍼런스 발표',
+  tutorial: '튜토리얼',
+  interview: '인터뷰',
+  lecture: '강의',
+  demo: '제품 데모',
+  discussion: '토론/패널',
+  unknown: '기타',
+};
+
+/**
+ * Process subtitles: clean, normalize, and deduplicate
+ * Extracted helper to avoid DRY violations across multiple methods
+ */
+function processSubtitles(subtitles: { text: string }[], forPDF: boolean = true): string[] {
+  const subtitleTexts = subtitles.map(sub => {
+    const cleaned = cleanSubtitleText(sub.text);
+    const mixed = cleanMixedLanguageText(cleaned, 'ko');
+    return forPDF ? normalizeTextForPDF(mixed) : mixed;
+  });
+  return deduplicateSubtitles(subtitleTexts);
+}
+
 export interface Theme {
   name: string;
   margins: { top: number; bottom: number; left: number; right: number };
@@ -203,6 +229,23 @@ export class PDFGenerator {
   }
 
   /**
+   * PDF 문서에 한글 폰트 등록 (또는 폴백)
+   */
+  private registerFonts(doc: PDFKit.PDFDocument): void {
+    if (validateKoreanFont()) {
+      doc.registerFont('NotoSansKR-Regular', KOREAN_FONT_REGULAR);
+      doc.registerFont('NotoSansKR-Bold', KOREAN_FONT_BOLD);
+      logger.debug('한글 폰트 로드 완료');
+    } else {
+      logger.warn('한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.');
+      this.theme.fonts.title.name = 'Helvetica-Bold';
+      this.theme.fonts.heading.name = 'Helvetica-Bold';
+      this.theme.fonts.body.name = 'Helvetica';
+      this.theme.fonts.timestamp.name = 'Helvetica';
+    }
+  }
+
+  /**
    * PDF 생성
    */
   async generatePDF(content: PDFContent, outputPath: string): Promise<void> {
@@ -233,19 +276,8 @@ export class PDFGenerator {
           },
         });
 
-        // Register Korean fonts
-        if (validateKoreanFont()) {
-          doc.registerFont('NotoSansKR-Regular', KOREAN_FONT_REGULAR);
-          doc.registerFont('NotoSansKR-Bold', KOREAN_FONT_BOLD);
-          logger.debug('한글 폰트 로드 완료');
-        } else {
-          logger.warn('한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.');
-          // Fallback to Helvetica
-          this.theme.fonts.title.name = 'Helvetica-Bold';
-          this.theme.fonts.heading.name = 'Helvetica-Bold';
-          this.theme.fonts.body.name = 'Helvetica';
-          this.theme.fonts.timestamp.name = 'Helvetica';
-        }
+        // Register Korean fonts (or fallback)
+        this.registerFonts(doc);
 
         const writeStream = fs.createWriteStream(outputPath);
         doc.pipe(writeStream);
@@ -290,11 +322,7 @@ export class PDFGenerator {
 
         // 섹션 필터링: 최종 처리 후 콘텐츠가 부족한 섹션 제외
         const validSections = content.sections.filter(section => {
-          const subtitleTexts = section.subtitles.map(sub => {
-            const cleaned = cleanSubtitleText(sub.text);
-            return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
-          });
-          const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+          const dedupedTexts = processSubtitles(section.subtitles);
           const totalWords = dedupedTexts.join(' ').split(/\s+/).filter(w => w.length > 0).length;
           return totalWords >= 10; // 최종 처리 후 10단어 이상만 포함
         });
@@ -415,12 +443,8 @@ export class PDFGenerator {
         md += `\n`;
       }
 
-      // 자막 - 정리, 혼합 언어 정리, 중복 제거
-      const subtitleTexts = section.subtitles.map((sub) => {
-        const cleaned = cleanSubtitleText(sub.text);
-        return cleanMixedLanguageText(cleaned, 'ko');
-      });
-      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+      // 자막 - 정리, 혼합 언어 정리, 중복 제거 (Markdown은 PDF 정규화 불필요)
+      const dedupedTexts = processSubtitles(section.subtitles, false);
 
       if (dedupedTexts.length === 0) {
         md += `*(이 구간에 자막이 없습니다)*\n\n`;
@@ -742,11 +766,7 @@ ${content.summary.keyPoints.map((point) => `      <li style="margin:5px 0">${poi
     <h2>📑 목차 <span style="font-size:12px;font-weight:normal;color:var(--secondary-color)">(${sections.length}개 섹션)</span></h2>
     <ul class="toc-list">
 ${sections.map((s) => {
-      const sectionSubtitles = s.subtitles.map((sub) => {
-        const cleaned = cleanSubtitleText(sub.text);
-        return cleanMixedLanguageText(cleaned, 'ko');
-      });
-      const sectionDeduped = deduplicateSubtitles(sectionSubtitles);
+      const sectionDeduped = processSubtitles(s.subtitles, false);
       const tsId = timestamp(s.timestamp).replace(/:/g, '');
       return `      <li><a href="#section-${tsId}" title="${sectionDeduped.length}줄">${timestamp(s.timestamp)}</a></li>`;
     }).join('\n')}
@@ -759,12 +779,8 @@ ${sections.map((s) => {
       const link = buildTimestampUrl(metadata.id, section.timestamp);
       const imgName = path.basename(section.screenshot.imagePath);
 
-      // 자막 - 정리, 혼합 언어 정리, 중복 제거
-      const subtitleTexts = section.subtitles.map((sub) => {
-        const cleaned = cleanSubtitleText(sub.text);
-        return cleanMixedLanguageText(cleaned, 'ko');
-      });
-      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+      // 자막 - 정리, 혼합 언어 정리, 중복 제거 (HTML은 PDF 정규화 불필요)
+      const dedupedTexts = processSubtitles(section.subtitles, false);
       const lineCount = dedupedTexts.length;
 
       const sectionId = ts.replace(/:/g, '');
@@ -1078,183 +1094,19 @@ ${sections.map((s) => {
           },
         });
 
-        // Register Korean fonts
-        if (validateKoreanFont()) {
-          doc.registerFont('NotoSansKR-Regular', KOREAN_FONT_REGULAR);
-          doc.registerFont('NotoSansKR-Bold', KOREAN_FONT_BOLD);
-        } else {
-          this.theme.fonts.title.name = 'Helvetica-Bold';
-          this.theme.fonts.heading.name = 'Helvetica-Bold';
-          this.theme.fonts.body.name = 'Helvetica';
-          this.theme.fonts.timestamp.name = 'Helvetica';
-        }
+        // Register Korean fonts (or fallback)
+        this.registerFonts(doc);
 
         const writeStream = fs.createWriteStream(outputPath);
         doc.pipe(writeStream);
 
-        const { theme } = this;
-        const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
+        const pageWidth = doc.page.width - this.theme.margins.left - this.theme.margins.right;
 
-        // 제목 섹션 - NFC 정규화 적용
-        doc
-          .font(theme.fonts.title.name)
-          .fontSize(20)
-          .fillColor(theme.colors.text)
-          .text(normalizeTextForPDF(`📹 ${brief.title}`), { width: pageWidth, align: 'left' });
+        // Render header (title + metadata)
+        this.renderBriefHeader(doc, brief, pageWidth);
 
-        doc.moveDown(0.3);
-
-        // 메타 정보
-        const videoTypeLabels: Record<string, string> = {
-          conference_talk: '컨퍼런스 발표',
-          tutorial: '튜토리얼',
-          interview: '인터뷰',
-          lecture: '강의',
-          demo: '제품 데모',
-          discussion: '토론/패널',
-          unknown: '기타',
-        };
-
-        doc
-          .font(theme.fonts.body.name)
-          .fontSize(10)
-          .fillColor(theme.colors.secondary)
-          .text(
-            normalizeTextForPDF(`채널: ${brief.metadata.channel} | 길이: ${formatTimestamp(brief.metadata.duration)} | 유형: ${videoTypeLabels[brief.metadata.videoType] || brief.metadata.videoType}`),
-            { width: pageWidth }
-          );
-
-        doc.moveDown(1);
-
-        // 구분선
-        doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
-          .moveTo(theme.margins.left, doc.y)
-          .lineTo(doc.page.width - theme.margins.right, doc.y)
-          .stroke();
-
-        doc.moveDown(0.8);
-
-        // 핵심 요약 - NFC 정규화 적용
-        doc
-          .font(theme.fonts.heading.name)
-          .fontSize(12)
-          .fillColor(theme.colors.text)
-          .text('📝 핵심 요약');
-
-        doc.moveDown(0.3);
-
-        doc
-          .font(theme.fonts.body.name)
-          .fontSize(10)
-          .fillColor(theme.colors.text)
-          .text(normalizeTextForPDF(brief.summary), { width: pageWidth, lineGap: 2 });
-
-        doc.moveDown(0.8);
-
-        // 구분선
-        doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
-          .moveTo(theme.margins.left, doc.y)
-          .lineTo(doc.page.width - theme.margins.right, doc.y)
-          .stroke();
-
-        doc.moveDown(0.8);
-
-        // Key Takeaways - NFC 정규화 적용
-        if (brief.keyTakeaways.length > 0) {
-          doc
-            .font(theme.fonts.heading.name)
-            .fontSize(12)
-            .fillColor(theme.colors.text)
-            .text('💡 Key Takeaways');
-
-          doc.moveDown(0.3);
-
-          doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
-          for (const point of brief.keyTakeaways) {
-            doc.text(normalizeTextForPDF(`• ${point}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
-          }
-
-          doc.moveDown(0.8);
-
-          // 구분선
-          doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
-            .moveTo(theme.margins.left, doc.y)
-            .lineTo(doc.page.width - theme.margins.right, doc.y)
-            .stroke();
-
-          doc.moveDown(0.8);
-        }
-
-        // 챕터별 요약 - NFC 정규화 적용
-        if (brief.chapterSummaries.length > 0) {
-          doc
-            .font(theme.fonts.heading.name)
-            .fontSize(12)
-            .fillColor(theme.colors.text)
-            .text('📑 챕터별 요약');
-
-          doc.moveDown(0.3);
-
-          for (const chapter of brief.chapterSummaries) {
-            const ts = formatTimestamp(chapter.startTime);
-            doc
-              .font(theme.fonts.timestamp.name)
-              .fontSize(9)
-              .fillColor(theme.colors.link)
-              .text(`[${ts}] `, { continued: true });
-
-            doc
-              .font(theme.fonts.body.name)
-              .fontSize(10)
-              .fillColor(theme.colors.text)
-              .text(normalizeTextForPDF(chapter.title), { continued: chapter.summary ? true : false });
-
-            if (chapter.summary) {
-              doc
-                .fillColor(theme.colors.secondary)
-                .text(normalizeTextForPDF(` - ${chapter.summary}`));
-            }
-          }
-
-          doc.moveDown(0.8);
-        }
-
-        // Action Items (있는 경우) - NFC 정규화 적용
-        if (brief.actionItems && brief.actionItems.length > 0) {
-          // 구분선
-          doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
-            .moveTo(theme.margins.left, doc.y)
-            .lineTo(doc.page.width - theme.margins.right, doc.y)
-            .stroke();
-
-          doc.moveDown(0.8);
-
-          doc
-            .font(theme.fonts.heading.name)
-            .fontSize(12)
-            .fillColor(theme.colors.text)
-            .text('🎯 Action Items');
-
-          doc.moveDown(0.3);
-
-          doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
-          for (const item of brief.actionItems) {
-            doc.text(normalizeTextForPDF(`□ ${item}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
-          }
-        }
-
-        // 푸터
-        doc.moveDown(2);
-        doc
-          .fontSize(8)
-          .fillColor(theme.colors.secondary)
-          .text(`원본: https://youtube.com/watch?v=${brief.metadata.videoId}`, { align: 'center', link: `https://youtube.com/watch?v=${brief.metadata.videoId}` });
-
-        doc.moveDown(0.3);
-        doc
-          .fontSize(7)
-          .fillColor('#9ca3af')
-          .text('Generated by yt2pdf | 영상 정보 및 자막의 저작권은 원 제작자에게 있습니다.', { align: 'center' });
+        // Render main content (summary, takeaways, chapters, action items, footer)
+        this.renderBriefContent(doc, brief, pageWidth);
 
         doc.end();
 
@@ -1274,18 +1126,8 @@ ${sections.map((s) => {
    * Executive Brief Markdown 생성
    */
   async generateBriefMarkdown(brief: ExecutiveBrief, outputPath: string): Promise<void> {
-    const videoTypeLabels: Record<string, string> = {
-      conference_talk: '컨퍼런스 발표',
-      tutorial: '튜토리얼',
-      interview: '인터뷰',
-      lecture: '강의',
-      demo: '제품 데모',
-      discussion: '토론/패널',
-      unknown: '기타',
-    };
-
     let md = `# 📹 ${brief.title}\n\n`;
-    md += `> **채널:** ${brief.metadata.channel} | **길이:** ${formatTimestamp(brief.metadata.duration)} | **유형:** ${videoTypeLabels[brief.metadata.videoType] || brief.metadata.videoType}\n\n`;
+    md += `> **채널:** ${brief.metadata.channel} | **길이:** ${formatTimestamp(brief.metadata.duration)} | **유형:** ${VIDEO_TYPE_LABELS[brief.metadata.videoType] || brief.metadata.videoType}\n\n`;
     md += `---\n\n`;
 
     // 핵심 요약
@@ -1336,16 +1178,6 @@ ${sections.map((s) => {
    * Executive Brief HTML 생성
    */
   async generateBriefHTML(brief: ExecutiveBrief, outputPath: string): Promise<void> {
-    const videoTypeLabels: Record<string, string> = {
-      conference_talk: '컨퍼런스 발표',
-      tutorial: '튜토리얼',
-      interview: '인터뷰',
-      lecture: '강의',
-      demo: '제품 데모',
-      discussion: '토론/패널',
-      unknown: '기타',
-    };
-
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1419,7 +1251,7 @@ ${sections.map((s) => {
     <p class="meta">
       <strong>채널:</strong> <a href="https://youtube.com/@${encodeURIComponent(brief.metadata.channel)}" target="_blank">${brief.metadata.channel}</a> |
       <strong>길이:</strong> ${formatTimestamp(brief.metadata.duration)} |
-      <strong>유형:</strong> ${videoTypeLabels[brief.metadata.videoType] || brief.metadata.videoType}
+      <strong>유형:</strong> ${VIDEO_TYPE_LABELS[brief.metadata.videoType] || brief.metadata.videoType}
     </p>
   </header>
 
@@ -1476,19 +1308,178 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
   }
 
   /**
-   * 표지 렌더링 (동기)
+   * Draw horizontal separator line for Brief PDF
    */
-  private renderCoverPageSync(
+  private drawBriefSeparator(doc: PDFKit.PDFDocument): void {
+    const { theme } = this;
+    doc.strokeColor(theme.colors.secondary).lineWidth(0.5)
+      .moveTo(theme.margins.left, doc.y)
+      .lineTo(doc.page.width - theme.margins.right, doc.y)
+      .stroke();
+  }
+
+  /**
+   * Render Brief PDF header (title and metadata)
+   */
+  private renderBriefHeader(
     doc: PDFKit.PDFDocument,
-    metadata: VideoMetadata,
-    thumbnailBuffer?: Buffer | null,
-    sectionCount?: number,
-    summary?: ContentSummary
+    brief: ExecutiveBrief,
+    pageWidth: number
   ): void {
     const { theme } = this;
-    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-    // 제목 (NFC 정규화 적용)
+    // Title
+    doc
+      .font(theme.fonts.title.name)
+      .fontSize(20)
+      .fillColor(theme.colors.text)
+      .text(normalizeTextForPDF(`📹 ${brief.title}`), { width: pageWidth, align: 'left' });
+
+    doc.moveDown(0.3);
+
+    // Metadata
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(10)
+      .fillColor(theme.colors.secondary)
+      .text(
+        normalizeTextForPDF(`채널: ${brief.metadata.channel} | 길이: ${formatTimestamp(brief.metadata.duration)} | 유형: ${VIDEO_TYPE_LABELS[brief.metadata.videoType] || brief.metadata.videoType}`),
+        { width: pageWidth }
+      );
+
+    doc.moveDown(1);
+    this.drawBriefSeparator(doc);
+    doc.moveDown(0.8);
+  }
+
+  /**
+   * Render Brief PDF content (summary, takeaways, chapters, action items)
+   */
+  private renderBriefContent(
+    doc: PDFKit.PDFDocument,
+    brief: ExecutiveBrief,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
+
+    // Summary
+    doc
+      .font(theme.fonts.heading.name)
+      .fontSize(12)
+      .fillColor(theme.colors.text)
+      .text('📝 핵심 요약');
+
+    doc.moveDown(0.3);
+
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(10)
+      .fillColor(theme.colors.text)
+      .text(normalizeTextForPDF(brief.summary), { width: pageWidth, lineGap: 2 });
+
+    doc.moveDown(0.8);
+    this.drawBriefSeparator(doc);
+    doc.moveDown(0.8);
+
+    // Key Takeaways
+    if (brief.keyTakeaways.length > 0) {
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(12)
+        .fillColor(theme.colors.text)
+        .text('💡 Key Takeaways');
+
+      doc.moveDown(0.3);
+
+      doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
+      for (const point of brief.keyTakeaways) {
+        doc.text(normalizeTextForPDF(`• ${point}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
+      }
+
+      doc.moveDown(0.8);
+      this.drawBriefSeparator(doc);
+      doc.moveDown(0.8);
+    }
+
+    // Chapter Summaries
+    if (brief.chapterSummaries.length > 0) {
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(12)
+        .fillColor(theme.colors.text)
+        .text('📑 챕터별 요약');
+
+      doc.moveDown(0.3);
+
+      for (const chapter of brief.chapterSummaries) {
+        const ts = formatTimestamp(chapter.startTime);
+        doc
+          .font(theme.fonts.timestamp.name)
+          .fontSize(9)
+          .fillColor(theme.colors.link)
+          .text(`[${ts}] `, { continued: true });
+
+        doc
+          .font(theme.fonts.body.name)
+          .fontSize(10)
+          .fillColor(theme.colors.text)
+          .text(normalizeTextForPDF(chapter.title), { continued: chapter.summary ? true : false });
+
+        if (chapter.summary) {
+          doc
+            .fillColor(theme.colors.secondary)
+            .text(normalizeTextForPDF(` - ${chapter.summary}`));
+        }
+      }
+
+      doc.moveDown(0.8);
+    }
+
+    // Action Items
+    if (brief.actionItems && brief.actionItems.length > 0) {
+      this.drawBriefSeparator(doc);
+      doc.moveDown(0.8);
+
+      doc
+        .font(theme.fonts.heading.name)
+        .fontSize(12)
+        .fillColor(theme.colors.text)
+        .text('🎯 Action Items');
+
+      doc.moveDown(0.3);
+
+      doc.font(theme.fonts.body.name).fontSize(10).fillColor(theme.colors.text);
+      for (const item of brief.actionItems) {
+        doc.text(normalizeTextForPDF(`□ ${item}`), { width: pageWidth - 15, indent: 10, lineGap: 2 });
+      }
+    }
+
+    // Footer
+    doc.moveDown(2);
+    doc
+      .fontSize(8)
+      .fillColor(theme.colors.secondary)
+      .text(`원본: https://youtube.com/watch?v=${brief.metadata.videoId}`, { align: 'center', link: `https://youtube.com/watch?v=${brief.metadata.videoId}` });
+
+    doc.moveDown(0.3);
+    doc
+      .fontSize(7)
+      .fillColor('#9ca3af')
+      .text('Generated by yt2pdf | 영상 정보 및 자막의 저작권은 원 제작자에게 있습니다.', { align: 'center' });
+  }
+
+  /**
+   * Render cover page title and thumbnail
+   */
+  private renderCoverTitle(
+    doc: PDFKit.PDFDocument,
+    metadata: VideoMetadata,
+    thumbnailBuffer: Buffer | null | undefined,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
+
+    // Title
     doc
       .font(theme.fonts.title.name)
       .fontSize(theme.fonts.title.size)
@@ -1497,24 +1488,34 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown(1);
 
-    // 썸네일 이미지 (있는 경우)
+    // Thumbnail
     if (thumbnailBuffer) {
       try {
         const thumbnailWidth = Math.min(400, pageWidth);
         const centerX = (doc.page.width - thumbnailWidth) / 2;
         doc.image(thumbnailBuffer, centerX, doc.y, {
-          fit: [thumbnailWidth, 225], // 16:9 비율
+          fit: [thumbnailWidth, 225],
           align: 'center',
         });
-        doc.y += 225 + 10; // 이미지 높이만큼 이동
+        doc.y += 225 + 10;
       } catch {
         logger.debug('썸네일 렌더링 실패');
       }
     }
 
     doc.moveDown(1);
+  }
 
-    // 메타 정보 (NFC 정규화 적용)
+  /**
+   * Render cover page metadata info
+   */
+  private renderCoverMetadata(
+    doc: PDFKit.PDFDocument,
+    metadata: VideoMetadata,
+    sectionCount: number | undefined
+  ): void {
+    const { theme } = this;
+
     doc
       .font(theme.fonts.body.name)
       .fontSize(theme.fonts.body.size)
@@ -1526,57 +1527,66 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.text(`섹션: ${sectionCount}개`, { align: 'center' });
     }
 
-    // 원본 링크 (클릭 가능)
     const youtubeUrl = `https://youtube.com/watch?v=${metadata.id}`;
     doc.fillColor(theme.colors.link);
     doc.text(youtubeUrl, { link: youtubeUrl, align: 'center' });
 
     doc.fillColor(theme.colors.secondary);
     doc.text(`생성일: ${new Date().toISOString().split('T')[0]}`, { align: 'center' });
+  }
 
-    // 요약 (있는 경우) - NFC 정규화 적용
-    if (summary && summary.summary) {
-      doc.moveDown(1.5);
+  /**
+   * Render cover page summary section
+   */
+  private renderCoverSummary(
+    doc: PDFKit.PDFDocument,
+    summary: ContentSummary,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
 
-      // 요약 제목
+    doc.moveDown(1.5);
+
+    doc
+      .font(theme.fonts.heading.name)
+      .fontSize(theme.fonts.heading.size)
+      .fillColor(theme.colors.text)
+      .text('📝 요약', { align: 'left' });
+
+    doc.moveDown(0.5);
+
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(theme.fonts.body.size)
+      .fillColor(theme.colors.text)
+      .text(normalizeTextForPDF(summary.summary), { align: 'left', width: pageWidth });
+
+    if (summary.keyPoints && summary.keyPoints.length > 0) {
+      doc.moveDown(1);
+
       doc
         .font(theme.fonts.heading.name)
-        .fontSize(theme.fonts.heading.size)
+        .fontSize(12)
         .fillColor(theme.colors.text)
-        .text('📝 요약', { align: 'left' });
+        .text('💡 핵심 포인트', { align: 'left' });
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.3);
 
-      // 요약 본문 (NFC 정규화 적용 - AI 응답 깨짐 방지)
       doc
         .font(theme.fonts.body.name)
         .fontSize(theme.fonts.body.size)
-        .fillColor(theme.colors.text)
-        .text(normalizeTextForPDF(summary.summary), { align: 'left', width: pageWidth });
+        .fillColor(theme.colors.text);
 
-      // 핵심 포인트 (있는 경우)
-      if (summary.keyPoints && summary.keyPoints.length > 0) {
-        doc.moveDown(1);
-
-        doc
-          .font(theme.fonts.heading.name)
-          .fontSize(12)
-          .fillColor(theme.colors.text)
-          .text('💡 핵심 포인트', { align: 'left' });
-
-        doc.moveDown(0.3);
-
-        doc
-          .font(theme.fonts.body.name)
-          .fontSize(theme.fonts.body.size)
-          .fillColor(theme.colors.text);
-
-        for (const point of summary.keyPoints) {
-          doc.text(normalizeTextForPDF(`• ${point}`), { indent: 10, width: pageWidth - 10 });
-        }
+      for (const point of summary.keyPoints) {
+        doc.text(normalizeTextForPDF(`• ${point}`), { indent: 10, width: pageWidth - 10 });
       }
     }
+  }
 
+  /**
+   * Render cover page footer
+   */
+  private renderCoverFooter(doc: PDFKit.PDFDocument): void {
     doc.moveDown(2);
     doc
       .fontSize(9)
@@ -1588,6 +1598,33 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       .fontSize(8)
       .fillColor('#9ca3af')
       .text('영상 정보 및 자막의 저작권은 원 제작자에게 있습니다.', { align: 'center' });
+  }
+
+  /**
+   * 표지 렌더링 (동기)
+   */
+  private renderCoverPageSync(
+    doc: PDFKit.PDFDocument,
+    metadata: VideoMetadata,
+    thumbnailBuffer?: Buffer | null,
+    sectionCount?: number,
+    summary?: ContentSummary
+  ): void {
+    const pageWidth = doc.page.width - this.theme.margins.left - this.theme.margins.right;
+
+    // Title and thumbnail
+    this.renderCoverTitle(doc, metadata, thumbnailBuffer, pageWidth);
+
+    // Metadata
+    this.renderCoverMetadata(doc, metadata, sectionCount);
+
+    // Summary (if available)
+    if (summary && summary.summary) {
+      this.renderCoverSummary(doc, summary, pageWidth);
+    }
+
+    // Footer
+    this.renderCoverFooter(doc);
   }
 
   /**
@@ -1651,17 +1688,17 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
   }
 
   /**
-   * Vertical 레이아웃 섹션 렌더링
+   * Render section image and timestamp for vertical layout
    */
-  private renderVerticalSection(
+  private renderSectionImageAndTimestamp(
     doc: PDFKit.PDFDocument,
     section: PDFSection,
-    videoId: string
+    videoId: string,
+    pageWidth: number
   ): void {
     const { theme } = this;
-    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-    // 챕터 제목 (있는 경우) - NFC 정규화 적용
+    // Chapter title
     if (section.chapterTitle) {
       doc
         .font(theme.fonts.heading.name)
@@ -1671,7 +1708,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 스크린샷 (200pt로 축소)
+    // Screenshot
     try {
       doc.image(section.screenshot.imagePath, {
         fit: [pageWidth, 200],
@@ -1683,7 +1720,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
 
     doc.moveDown();
 
-    // 타임스탬프
+    // Timestamp
     const timestamp = formatTimestamp(section.timestamp);
     if (this.config.timestampLinks) {
       const url = buildTimestampUrl(videoId, section.timestamp);
@@ -1701,14 +1738,19 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     }
 
     doc.moveDown(0.5);
+  }
 
-    // 남은 페이지 공간 확인 - 최소 100px 이상 있어야 콘텐츠 렌더링
-    const remainingSpace = doc.page.height - doc.y - theme.margins.bottom - 40; // 40px for footer
-    if (remainingSpace < 100) {
-      doc.addPage();
-    }
+  /**
+   * Render AI-enhanced summary content (keyPoints, mainInformation, notableQuotes)
+   */
+  private renderSectionSummaryContent(
+    doc: PDFKit.PDFDocument,
+    section: PDFSection,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
 
-    // 💡 핵심 포인트 (keyPoints)
+    // Key Points
     if (section.sectionSummary?.keyPoints && section.sectionSummary.keyPoints.length > 0) {
       doc
         .font(theme.fonts.heading.name)
@@ -1728,7 +1770,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 📋 주요 정보 (mainInformation - paragraphs + bullets)
+    // Main Information
     if (section.sectionSummary?.mainInformation) {
       const mainInfo = section.sectionSummary.mainInformation;
 
@@ -1752,16 +1794,15 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
         }
       }
 
-      // Bullets - 태그는 dim gray로 처리
+      // Bullets with tag handling
       if (mainInfo.bullets && mainInfo.bullets.length > 0) {
         const tagPattern = /^\[([A-Z_]+)\]\s*/;
-        const dimGray = '#9ca3af'; // 태그용 연한 회색
+        const dimGray = '#9ca3af';
 
         for (const bullet of mainInfo.bullets) {
           const tagMatch = bullet.match(tagPattern);
 
           if (tagMatch) {
-            // 태그가 있는 경우: 태그는 dim, 내용은 일반 색상
             const tag = tagMatch[0];
             const content = bullet.slice(tag.length);
 
@@ -1771,7 +1812,6 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
               .fillColor(theme.colors.text)
               .text(normalizeTextForPDF(content));
           } else {
-            // 태그가 없는 경우: 일반 처리
             doc
               .fillColor(theme.colors.text)
               .text(normalizeTextForPDF(`• ${bullet}`), { width: pageWidth, indent: 10 });
@@ -1781,7 +1821,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       doc.moveDown(0.5);
     }
 
-    // 💬 인용 (notableQuotes)
+    // Notable Quotes
     if (section.sectionSummary?.notableQuotes && section.sectionSummary.notableQuotes.length > 0) {
       doc
         .font(theme.fonts.heading.name)
@@ -1801,50 +1841,83 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
       }
       doc.moveDown(0.3);
     }
+  }
 
-    // 자막 렌더링 - AI 향상 콘텐츠가 없는 경우에만
-    const hasEnhancedContent = section.sectionSummary && (
+  /**
+   * Render raw subtitles when no AI-enhanced content is available
+   */
+  private renderRawSubtitles(
+    doc: PDFKit.PDFDocument,
+    section: PDFSection,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
+    const dedupedTexts = processSubtitles(section.subtitles);
+
+    if (dedupedTexts.length === 0) {
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(theme.fonts.body.size)
+        .fillColor(theme.colors.secondary)
+        .text('(이 구간에 자막이 없습니다)', { align: 'center' });
+    } else {
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(theme.fonts.body.size)
+        .fillColor(theme.colors.text);
+
+      const maxY = doc.page.height - theme.margins.bottom - 50;
+
+      for (const text of dedupedTexts) {
+        if (doc.y >= maxY) {
+          doc
+            .fontSize(9)
+            .fillColor(theme.colors.secondary)
+            .text('(자막 계속...)', { align: 'right' });
+          break;
+        }
+        doc.text(text, { width: pageWidth });
+      }
+    }
+  }
+
+  /**
+   * Check if section has AI-enhanced content
+   */
+  private hasEnhancedContent(section: PDFSection): boolean {
+    return !!(section.sectionSummary && (
       (section.sectionSummary.keyPoints && section.sectionSummary.keyPoints.length > 0) ||
       (section.sectionSummary.mainInformation?.paragraphs && section.sectionSummary.mainInformation.paragraphs.length > 0) ||
       (section.sectionSummary.mainInformation?.bullets && section.sectionSummary.mainInformation.bullets.length > 0)
-    );
+    ));
+  }
 
-    if (!hasEnhancedContent) {
-      // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
-      const subtitleTexts = section.subtitles.map((sub) => {
-        const cleaned = cleanSubtitleText(sub.text);
-        return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
-      });
-      const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+  /**
+   * Vertical 레이아웃 섹션 렌더링
+   */
+  private renderVerticalSection(
+    doc: PDFKit.PDFDocument,
+    section: PDFSection,
+    videoId: string
+  ): void {
+    const { theme } = this;
+    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
 
-      // 자막이 없는 경우 안내 메시지
-      if (dedupedTexts.length === 0) {
-        doc
-          .font(theme.fonts.body.name)
-          .fontSize(theme.fonts.body.size)
-          .fillColor(theme.colors.secondary)
-          .text('(이 구간에 자막이 없습니다)', { align: 'center' });
-      } else {
-        doc
-          .font(theme.fonts.body.name)
-          .fontSize(theme.fonts.body.size)
-          .fillColor(theme.colors.text);
+    // Image and timestamp
+    this.renderSectionImageAndTimestamp(doc, section, videoId, pageWidth);
 
-        // 남은 공간 계산 - 오버플로우 방지
-        const maxY = doc.page.height - theme.margins.bottom - 50; // 50px for footer
+    // Check page space
+    const remainingSpace = doc.page.height - doc.y - theme.margins.bottom - 40;
+    if (remainingSpace < 100) {
+      doc.addPage();
+    }
 
-        for (const text of dedupedTexts) {
-          // 남은 공간이 부족하면 중단 (오버플로우 방지)
-          if (doc.y >= maxY) {
-            doc
-              .fontSize(9)
-              .fillColor(theme.colors.secondary)
-              .text('(자막 계속...)', { align: 'right' });
-            break;
-          }
-          doc.text(text, { width: pageWidth });
-        }
-      }
+    // AI-enhanced content
+    this.renderSectionSummaryContent(doc, section, pageWidth);
+
+    // Raw subtitles (only if no AI content)
+    if (!this.hasEnhancedContent(section)) {
+      this.renderRawSubtitles(doc, section, pageWidth);
     }
   }
 
@@ -1898,11 +1971,7 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     }
 
     // 자막 - 정리, 혼합 언어 정리, 중복 제거, NFC 정규화
-    const subtitleTexts = section.subtitles.map((sub) => {
-      const cleaned = cleanSubtitleText(sub.text);
-      return normalizeTextForPDF(cleanMixedLanguageText(cleaned, 'ko'));
-    });
-    const dedupedTexts = deduplicateSubtitles(subtitleTexts);
+    const dedupedTexts = processSubtitles(section.subtitles);
 
     if (dedupedTexts.length === 0) {
       doc
