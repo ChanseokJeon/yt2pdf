@@ -84,7 +84,7 @@ export class Orchestrator {
       try {
         this.unifiedProcessor = new UnifiedContentProcessor(
           process.env.OPENAI_API_KEY,
-          this.config.ai.model || 'gpt-4o-mini'
+          this.config.ai.model || 'gpt-5.2'
         );
       } catch {
         // 통합 프로세서 사용 불가

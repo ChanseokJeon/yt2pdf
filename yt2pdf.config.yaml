@@ -51,4 +51,4 @@ translation:
 
 ai:
   provider: openai     # openai
-  model: gpt-4o-mini   # 사용할 모델
+  model: gpt-5.2   # 사용할 모델 (best quality)

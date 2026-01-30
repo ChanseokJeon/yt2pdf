@@ -69,7 +69,7 @@ export const TranslationConfigSchema = z.object({
 
 export const AIConfigSchema = z.object({
   provider: z.enum(['openai']).default('openai'),
-  model: z.string().default('gpt-4o-mini'),
+  model: z.string().default('gpt-5.2'),
 });
 
 export const ChapterConfigSchema = z.object({

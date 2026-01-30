@@ -106,7 +106,7 @@ describe('Config Schemas', () => {
       const result = AIConfigSchema.parse({});
 
       expect(result.provider).toBe('openai');
-      expect(result.model).toBe('gpt-4o-mini');
+      expect(result.model).toBe('gpt-5.2');
     });
 
     it('should validate provider option', () => {

@@ -80,7 +80,7 @@ export class AIProvider {
     return cleanedOfGarbage;
   }
 
-  constructor(apiKey?: string, model: string = 'gpt-4o-mini') {
+  constructor(apiKey?: string, model: string = 'gpt-5.2') {
     const key = apiKey || process.env.OPENAI_API_KEY;
     if (!key) {
       throw new Yt2PdfError(
@@ -149,7 +149,7 @@ KEY_POINTS:
           },
         ],
         temperature: 0.3,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       });
 
       const content = response.choices[0]?.message?.content || '';
@@ -236,7 +236,7 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
           },
         ],
         temperature: 0.3,
-        max_tokens: Math.min(4000, sections.length * 300),
+        max_completion_tokens: Math.min(4000, sections.length * 300),
       });
 
       const content = response.choices[0]?.message?.content || '';
@@ -370,7 +370,7 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
             },
           ],
           temperature: 0.3,
-          max_tokens: 4000,
+          max_completion_tokens: 4000,
         });
 
         const content = response.choices[0]?.message?.content || '';
@@ -418,7 +418,7 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
                     },
                   ],
                   temperature: 0.2,
-                  max_tokens: 500,
+                  max_completion_tokens: 500,
                 });
                 const retryText = retryResponse.choices[0]?.message?.content?.trim();
                 if (retryText) {
@@ -491,7 +491,7 @@ ${maxKeyPoints > 2 ? '- (핵심 포인트 3)' : ''}
           },
         ],
         temperature: 0,
-        max_tokens: 10,
+        max_completion_tokens: 10,
       });
 
       const detectedLang = response.choices[0]?.message?.content?.trim().toLowerCase() || 'unknown';
@@ -547,7 +547,7 @@ ${subtitleSample.slice(0, 500)}
           },
         ],
         temperature: 0.1,
-        max_tokens: 100,
+        max_completion_tokens: 100,
       });
 
       const content = response.choices[0]?.message?.content?.trim() || '';
@@ -648,7 +648,7 @@ ${blocksText}
           },
         ],
         temperature: 0.3,
-        max_tokens: 2000,
+        max_completion_tokens: 2000,
       });
 
       const content = response.choices[0]?.message?.content?.trim() || '';
@@ -772,7 +772,7 @@ ${chapterTexts.map((c) => `[${this.formatTimestamp(c.startTime)}] ${c.title}\n${
           },
         ],
         temperature: 0.3,
-        max_tokens: 3000,
+        max_completion_tokens: 3000,
       });
 
       const content = response.choices[0]?.message?.content?.trim() || '';
