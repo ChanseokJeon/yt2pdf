@@ -20,6 +20,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 docs/SESSION.md와 docs/PROGRESS.md를 읽고 다음 태스크를 이어서 진행해줘.
 ```
 
+### Tool rule
+1. never use 'rm -rf' without confirmation.
+
 ## 문서 구조
 
 ```
