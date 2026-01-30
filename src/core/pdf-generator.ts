@@ -1743,10 +1743,30 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
         }
       }
 
-      // Bullets
+      // Bullets - 태그는 dim gray로 처리
       if (mainInfo.bullets && mainInfo.bullets.length > 0) {
+        const tagPattern = /^\[([A-Z_]+)\]\s*/;
+        const dimGray = '#9ca3af'; // 태그용 연한 회색
+
         for (const bullet of mainInfo.bullets) {
-          doc.text(normalizeTextForPDF(`• ${bullet}`), { width: pageWidth, indent: 10 });
+          const tagMatch = bullet.match(tagPattern);
+
+          if (tagMatch) {
+            // 태그가 있는 경우: 태그는 dim, 내용은 일반 색상
+            const tag = tagMatch[0];
+            const content = bullet.slice(tag.length);
+
+            doc
+              .fillColor(dimGray)
+              .text(normalizeTextForPDF(`• ${tag}`), { width: pageWidth, indent: 10, continued: true })
+              .fillColor(theme.colors.text)
+              .text(normalizeTextForPDF(content));
+          } else {
+            // 태그가 없는 경우: 일반 처리
+            doc
+              .fillColor(theme.colors.text)
+              .text(normalizeTextForPDF(`• ${bullet}`), { width: pageWidth, indent: 10 });
+          }
         }
       }
       doc.moveDown(0.5);
