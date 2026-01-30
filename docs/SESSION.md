@@ -8,10 +8,10 @@
 
 | 항목 | 값 |
 |------|-----|
-| **날짜** | 2025-01-27 |
-| **세션 ID** | session-003 |
-| **완료한 작업** | AI 기능 구현 (요약 + 번역) |
-| **다음 작업** | 실제 API 키로 E2E 테스트 |
+| **날짜** | 2026-01-30 |
+| **세션 ID** | session-004 |
+| **완료한 작업** | PDF 품질 개선 + AI 프롬프트 재설계 |
+| **다음 작업** | 추가 영상으로 PDF 품질 검증 |
 
 ---
 
@@ -39,67 +39,53 @@ docs/
 
 ---
 
-## 최근 완료한 작업: AI 기능 구현
+## 최근 완료한 작업: PDF 품질 개선 + AI 프롬프트 재설계
 
-### 구현된 기능
+### 해결한 문제들
 
-1. **AI 요약 기능**
-   - 자막 텍스트를 AI로 요약
-   - 핵심 포인트 추출
-   - PDF/HTML/Markdown 첫 페이지에 표시
+1. **PDF 중복 콘텐츠 문제** (커밋: 9637781)
+   - AI 향상 콘텐츠와 원본 자막이 함께 표시되던 문제
+   - `hasEnhancedContent` 조건 체크로 해결
 
-2. **자동 번역 기능**
-   - 기본 언어 설정 (defaultLanguage)
-   - 기본 언어가 아닌 자막 자동 번역
-   - 배치 번역으로 효율적 처리
+2. **PDF 표지 정렬 문제** (커밋: 6e6c767)
+   - URL이 "원본:" 레이블과 겹치던 문제
+   - `continued: true` + `align: center` 충돌 제거로 해결
 
-3. **CLI 옵션 추가**
-   - `--summary`: AI 요약 생성
-   - `--translate`: 자동 번역 활성화
-   - `--target-lang <code>`: 번역 대상 언어
+3. **중복 oneLiner 섹션 제거** (커밋: 06e4054)
+   - 페이지 하단에 다른 스타일로 표시되던 문제 해결
 
-4. **설정 파일 지원**
-   ```yaml
-   summary:
-     enabled: true
-     maxLength: 500
-     style: brief
+4. **AI 프롬프트 재설계** (커밋: 77dec52)
+   - TASK A (번역) / TASK B (팩트 추출) / TASK C (인용구) 분리
+   - 카테고리 태그: [METRIC], [TOOL], [TECHNIQUE], [DEFINITION], [INSIGHT]
+   - 번역문과 주요정보 간 의미론적 중복 문제 해결
+   - 인용구 필수 추출 규칙 추가
 
-   translation:
-     enabled: true
-     defaultLanguage: ko
-     autoTranslate: true
+### 생성된 도구
+- `scripts/verify-ai-output.ts` - AI 캐시 출력 검증 도구
+  - 태그 분포 확인
+  - 번역 중복률 계산
+  - 인용구 추출 확인
 
-   ai:
-     provider: openai
-     model: gpt-4o-mini
-   ```
+### 테스트 상태
+- 157개 테스트 모두 통과 (100%)
 
-### 생성된 파일
-- `src/providers/ai.ts` - AI Provider (요약/번역/언어감지)
-- `tests/unit/providers/ai.test.ts` - 단위 테스트
-- `tests/unit/types/config.test.ts` - 설정 스키마 테스트
-- `tests/integration/ai-features.test.ts` - 통합 테스트
-
-### 테스트 커버리지
-- Statements: 96.77%
-- Branches: 86%
-- Functions: 100%
-- Lines: 96.65%
+### AI 출력 품질 (검증 결과)
+- 불릿 태그 적용률: 100%
+- 태그 분포: INSIGHT(9), METRIC(5), TOOL(4), TECHNIQUE(3), DEFINITION(1)
+- 인용구 추출: 섹션당 1개씩 11개 추출
 
 ---
 
 ## 다음 작업
 
-1. **실제 API 키로 E2E 테스트**
-   - OPENAI_API_KEY 환경변수 설정 필요
-   - 영어 영상으로 번역 테스트
-   - 요약 결과 품질 검토
+1. **다양한 영상으로 PDF 품질 검증**
+   - 다른 유형의 영상으로 테스트 (강연, 튜토리얼, 인터뷰 등)
+   - AI 추출 품질 일관성 확인
 
-2. **추가 개선 사항**
-   - 요약 캐싱 (동일 자막 재요약 방지)
-   - 번역 품질 개선 (용어 일관성)
-   - 에러 핸들링 강화
+2. **추가 개선 고려사항**
+   - 인용구 품질 개선 (더 임팩트 있는 문장 선택)
+   - 카테고리 태그 시각화 (PDF에서 태그별 색상 구분)
+   - 긴 영상 처리 최적화
 
 ---
 
@@ -136,10 +122,13 @@ yt2pdf https://youtube.com/watch?v=... --translate --target-lang en
 
 | 날짜 | 변경 내용 |
 |------|----------|
+| 2026-01-30 | PDF 품질 개선 + AI 프롬프트 재설계 |
+| 2025-01-29 | PDF 품질 개선 (폰트, 자막, 번역) |
+| 2025-01-28 | AI 요약, 섹션 요약, 썸네일 추가 |
 | 2025-01-27 | AI 기능 구현 (요약 + 번역) |
 | 2025-01-26 | 200개 개선사항 적용 |
 | 2025-01-26 | 초기 세션 생성, 설계 문서 완료 |
 
 ---
 
-*마지막 업데이트: 2025-01-27*
+*마지막 업데이트: 2026-01-30*
