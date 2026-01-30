@@ -25,11 +25,11 @@ export interface NotableQuote {
 }
 
 export interface EnhancedSectionContent {
-  translatedText: string;
-  keyPoints: string[];
-  mainInformation: MainInformation;
-  notableQuotes: NotableQuote[];
   oneLiner: string;
+  keyPoints: string[];
+  notableQuotes: NotableQuote[];
+  mainInformation: MainInformation;
+  translatedText: string;
 }
 
 export interface UnifiedProcessResult {
@@ -188,40 +188,113 @@ export class UnifiedContentProcessor {
   private buildPrompt(targetLanguage: string, maxKeyPoints: number, includeQuotes: boolean): string {
     const langName = this.getLanguageName(targetLanguage);
 
-    return `You are an expert content analyst. For each video section, extract and structure information.
+    return `You are an expert content analyst performing TWO DISTINCT tasks for each video section.
 
-OUTPUT REQUIREMENTS:
-1. oneLiner: Single sentence summary (max 50 chars) in ${langName}
-2. keyPoints: ${maxKeyPoints} essential takeaways as bullet points in ${langName}
-3. mainInformation:
-   - paragraphs: 1-2 detailed explanation paragraphs in ${langName}
-   - bullets: 3-5 specific facts/details/metrics in ${langName}
-4. translatedText: Full translation to ${langName} (clean, readable)
-${includeQuotes ? '5. notableQuotes: 1-2 memorable direct quotes with speaker if known' : ''}
+═══════════════════════════════════════════════════════════════
+TASK A: TRANSLATION (translatedText field)
+═══════════════════════════════════════════════════════════════
+Create a clean, readable translation of what the speaker said.
+- Preserve narrative flow and speaker's voice
+- Remove filler words, false starts, repetitions
+- This is for READING the content
 
-CRITICAL RULES:
-- ALL output must be in ${langName}
-- Remove filler words and repetitions
-- Keep keyPoints concise (under 20 words each)
-- mainInformation should provide VALUE (facts, how-tos, examples)
-- Do NOT include generic statements
+═══════════════════════════════════════════════════════════════
+TASK B: FACT EXTRACTION (mainInformation field)
+═══════════════════════════════════════════════════════════════
+Extract STANDALONE FACTS that exist independently of how they were presented.
 
-OUTPUT FORMAT (JSON):
+⚠️ CRITICAL: Do NOT restate or summarize the translation!
+⚠️ Extract the UNDERLYING DATA, not "the speaker said..."
+
+EXTRACTION CATEGORIES (tag each bullet):
+• [METRIC] - Numbers, statistics, percentages, timelines, quantities
+• [TOOL] - Specific tools, platforms, technologies, products mentioned
+• [TECHNIQUE] - Methods, processes, workflows, how-to steps
+• [DEFINITION] - New terms, concepts, frameworks explained
+• [INSIGHT] - Key claims, conclusions, predictions, recommendations
+
+PARAGRAPHS: Provide analytical CONTEXT (why this matters, how it connects)
+- NOT a summary of what was said
+- IS an explanation of significance or implications
+
+═══════════════════════════════════════════════════════════════
+TASK C: NOTABLE QUOTES (notableQuotes field) - REQUIRED
+═══════════════════════════════════════════════════════════════
+⚠️ MANDATORY: You MUST extract at least 1 quote per section.
+
+Look for these types of statements:
+• Specific claims with numbers: "AI가 코드의 99%를 작성합니다"
+• Bold assertions: "10배의 차이가 있습니다"
+• Memorable phrases that summarize a key point
+• Counterintuitive or surprising statements
+
+If the section contains dialogue, extract the most impactful statement.
+If no obvious quote exists, extract the most specific factual claim as a quote.
+
+FORMAT: {"text": "원문 그대로", "speaker": "발표자"}
+
+Examples of GOOD quotes:
+• "15명으로 4개의 소프트웨어 제품을 운영하고 있습니다"
+• "AI를 사용하는 조직과 그렇지 않은 조직의 차이는 90%입니다"
+• "코드의 99%가 AI 에이전트에 의해 작성됩니다"
+
+⚠️ FALLBACK RULE: If you cannot find a memorable quote, use the most specific factual statement that contains a number or concrete claim. Example: "15명으로 4개의 소프트웨어 제품을 운영합니다" is acceptable as a quote.
+
+═══════════════════════════════════════════════════════════════
+QUALITY EXAMPLES
+═══════════════════════════════════════════════════════════════
+
+❌ BAD bullet (translation restatement):
+"발표자는 자신의 회사가 15명으로 4개 제품을 운영한다고 말한다"
+
+✓ GOOD bullet (fact extraction):
+"[METRIC] 팀 규모: 15명 | 제품 수: 4개 | 성장: 월간 두 자릿수 (6개월 연속)"
+
+❌ BAD paragraph (translation summary):
+"발표자는 AI를 활용한 회사 운영의 중요성을 강조하며 개인 경험을 공유했다."
+
+✓ GOOD paragraph (analytical context):
+"이 사례는 AI 네이티브 조직이 전통적 엔지니어링 조직 대비 10배 생산성을 달성할 수 있음을 실증한다. 핵심은 코드 작성의 99%를 AI에 위임하고 인간은 검증과 방향 설정에 집중하는 구조다."
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT (JSON)
+═══════════════════════════════════════════════════════════════
 {
   "sections": [
     {
       "index": 0,
-      "oneLiner": "...",
-      "keyPoints": ["...", "..."],
+      "oneLiner": "핵심 주제 한 문장 (최대 50자) - ${langName}",
+      "keyPoints": [
+        "핵심 포인트 1 (20단어 이내)",
+        "핵심 포인트 2",
+        "핵심 포인트 3"
+      ],
+      "notableQuotes": [{"text": "가장 인상적인 직접 인용문", "speaker": "발표자"}],  // ⚠️ REQUIRED: At least 1 quote per section - MUST appear before mainInformation
       "mainInformation": {
-        "paragraphs": ["..."],
-        "bullets": ["...", "..."]
+        "paragraphs": [
+          "이 섹션의 의미와 맥락을 설명하는 분석적 문단 (번역 요약 아님)"
+        ],
+        "bullets": [
+          "[METRIC] 구체적 수치나 통계",
+          "[TECHNIQUE] 언급된 방법론이나 프로세스",
+          "[TOOL] 언급된 도구나 기술",
+          "[INSIGHT] 핵심 주장이나 결론"
+        ]
       },
-      "translatedText": "...",
-      "notableQuotes": [{"text": "...", "speaker": "..."}]
+      "translatedText": "화자가 말한 내용의 깔끔한 번역문..."
     }
   ]
-}`;
+}
+
+═══════════════════════════════════════════════════════════════
+RULES
+═══════════════════════════════════════════════════════════════
+1. ALL output in ${langName}
+2. Every bullet in mainInformation MUST have a category tag
+3. If a category has no extractable facts, skip it (don't force)
+4. keyPoints: max ${maxKeyPoints} items, under 20 words each
+5. translatedText = for reading | mainInformation = for reference
+${includeQuotes ? '6. ⚠️ notableQuotes is MANDATORY - extract at least 1 quote per section, NEVER return empty array' : ''}`;
   }
 
   /**
@@ -279,12 +352,12 @@ OUTPUT FORMAT (JSON):
           resultMap.set(original.timestamp, {
             oneLiner: item.oneLiner || '',
             keyPoints: item.keyPoints || [],
+            notableQuotes: item.notableQuotes || [],
             mainInformation: {
               paragraphs: item.mainInformation?.paragraphs || [],
               bullets: item.mainInformation?.bullets || [],
             },
             translatedText: item.translatedText || original.rawText,
-            notableQuotes: item.notableQuotes || [],
           });
         }
 
