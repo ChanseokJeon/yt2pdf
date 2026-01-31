@@ -58,7 +58,7 @@ export function validateOutputFormat(format: string | undefined): ValidationResu
  * PDF 레이아웃 유효성 검사
  */
 export function validatePDFLayout(layout: string | undefined): ValidationResult {
-  const validLayouts: PDFLayout[] = ['vertical', 'horizontal'];
+  const validLayouts: PDFLayout[] = ['vertical', 'horizontal', 'minimal-neon'];
 
   if (!layout) {
     return { valid: true, errors: [] }; // 기본값 사용

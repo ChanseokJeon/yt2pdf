@@ -29,7 +29,7 @@ export const SubtitleConfigSchema = z.object({
 });
 
 export const PDFConfigSchema = z.object({
-  layout: z.enum(['vertical', 'horizontal']).default('vertical'),
+  layout: z.enum(['vertical', 'horizontal', 'minimal-neon']).default('vertical'),
   theme: z.string().default('default'),
   includeToc: z.boolean().default(true),
   timestampLinks: z.boolean().default(true),

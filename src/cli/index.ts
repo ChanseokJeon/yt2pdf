@@ -21,7 +21,7 @@ program
   .option('-o, --output <path>', '출력 디렉토리')
   .option('-f, --format <type>', '출력 포맷 (pdf, md, html, brief)', 'pdf')
   .option('-i, --interval <seconds>', '스크린샷 간격 (초)', '60')
-  .option('-l, --layout <type>', 'PDF 레이아웃 (vertical, horizontal)', 'vertical')
+  .option('-l, --layout <type>', 'PDF 레이아웃 (vertical, horizontal, minimal-neon)', 'vertical')
   .option('-t, --theme <name>', 'PDF 테마', 'default')
   .option('--theme-from <source>', 'URL, 이미지, 또는 프리셋에서 테마 추출')
   .option('-q, --quality <level>', '스크린샷 품질 (low, medium, high)', 'low')

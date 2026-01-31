@@ -219,6 +219,60 @@ const DEFAULT_THEME: Theme = {
   },
 };
 
+/**
+ * Minimal Neon Theme Colors (from Layout6_Minimal_Neon design)
+ */
+const MINIMAL_NEON_COLORS = {
+  bg: '#09090b',
+  bgElevated: '#18181b',
+  bgSubtle: '#27272a',
+  neonGreen: '#22c55e',
+  neonBlue: '#3b82f6',
+  neonPurple: '#a855f7',
+  neonYellow: '#eab308',
+  neonCyan: '#06b6d4',
+  white: '#fafafa',
+  gray100: '#e4e4e7',
+  gray300: '#a1a1aa',
+  gray500: '#71717a',
+  gray700: '#3f3f46',
+  border: '#27272a',
+};
+
+/**
+ * Tag badge colors for minimal-neon layout
+ */
+const MINIMAL_NEON_TAG_COLORS: Record<string, { bg: string; text: string }> = {
+  INSIGHT: { bg: 'rgba(34, 197, 94, 0.2)', text: '#22c55e' },
+  TECHNIQUE: { bg: 'rgba(59, 130, 246, 0.2)', text: '#3b82f6' },
+  DEFINITION: { bg: 'rgba(168, 85, 247, 0.2)', text: '#a855f7' },
+  METRIC: { bg: 'rgba(234, 179, 8, 0.2)', text: '#eab308' },
+  TOOL: { bg: 'rgba(6, 182, 212, 0.2)', text: '#06b6d4' },
+};
+
+const MINIMAL_NEON_THEME: Theme = {
+  name: 'minimal-neon',
+  margins: { top: 60, bottom: 60, left: 48, right: 48 },
+  fonts: {
+    title: { name: 'NotoSansKR-Bold', size: 36 },
+    heading: { name: 'NotoSansKR-Bold', size: 14 },
+    body: { name: 'NotoSansKR-Regular', size: 12 },
+    timestamp: { name: 'NotoSansKR-Bold', size: 11 },
+  },
+  colors: {
+    primary: MINIMAL_NEON_COLORS.neonGreen,
+    text: MINIMAL_NEON_COLORS.white,
+    secondary: MINIMAL_NEON_COLORS.gray500,
+    link: MINIMAL_NEON_COLORS.neonBlue,
+    background: MINIMAL_NEON_COLORS.bg,
+  },
+  spacing: {
+    sectionGap: 40,
+    paragraphGap: 16,
+    imageMargin: 20,
+  },
+};
+
 export class PDFGenerator {
   private config: PDFConfig;
   private theme: Theme;
@@ -313,11 +367,19 @@ export class PDFGenerator {
         };
 
         // 표지 (썸네일 + 요약 포함)
-        this.renderCoverPageSync(doc, content.metadata, thumbnailBuffer, content.sections.length, content.summary);
+        if (this.config.layout === 'minimal-neon') {
+          this.renderMinimalNeonCoverPage(doc, content.metadata, thumbnailBuffer, content.sections.length, content.summary);
+        } else {
+          this.renderCoverPageSync(doc, content.metadata, thumbnailBuffer, content.sections.length, content.summary);
+        }
 
         // 목차 (옵션)
         if (this.config.includeToc) {
-          this.renderTableOfContents(doc, content.sections, content.metadata.id);
+          if (this.config.layout === 'minimal-neon') {
+            this.renderMinimalNeonTOC(doc, content.sections, content.metadata.id);
+          } else {
+            this.renderTableOfContents(doc, content.sections, content.metadata.id);
+          }
         }
 
         // 섹션 필터링: 최종 처리 후 콘텐츠가 부족한 섹션 제외
@@ -350,7 +412,9 @@ export class PDFGenerator {
             outline.addItem(bookmarkTitle);
           }
 
-          if (this.config.layout === 'vertical') {
+          if (this.config.layout === 'minimal-neon') {
+            this.renderMinimalNeonSection(doc, section, content.metadata.id, i);
+          } else if (this.config.layout === 'vertical') {
             this.renderVerticalSection(doc, section, content.metadata.id);
           } else {
             this.renderHorizontalSection(doc, section, content.metadata.id);
@@ -2002,12 +2066,606 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
     }
   }
 
+  // ============================================================
+  // Minimal Neon Layout Methods
+  // ============================================================
+
+  /**
+   * Fill page background with dark color for minimal-neon layout
+   */
+  private fillMinimalNeonBackground(doc: PDFKit.PDFDocument): void {
+    doc.rect(0, 0, doc.page.width, doc.page.height)
+      .fill(MINIMAL_NEON_COLORS.bg);
+  }
+
+  /**
+   * Render section label with gradient line (minimal-neon style)
+   */
+  private renderMinimalNeonSectionLabel(
+    doc: PDFKit.PDFDocument,
+    label: string,
+    pageWidth: number
+  ): void {
+    const { theme } = this;
+
+    // Label text
+    doc
+      .font(theme.fonts.timestamp.name)
+      .fontSize(11)
+      .fillColor(MINIMAL_NEON_COLORS.neonGreen)
+      .text(label.toUpperCase(), { continued: true });
+
+    // Gradient line (simulated with fading line)
+    const startX = doc.x + doc.widthOfString(label.toUpperCase()) + 12;
+    const lineY = doc.y + 5;
+    const lineEndX = theme.margins.left + pageWidth;
+
+    // Draw gradient line (simplified as solid line fading to transparent)
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.neonGreen)
+      .lineWidth(1)
+      .moveTo(startX, lineY)
+      .lineTo(lineEndX, lineY)
+      .stroke();
+
+    doc.text(''); // Complete the continued text
+    doc.moveDown(0.8);
+  }
+
+  /**
+   * Render minimal-neon cover page
+   */
+  private renderMinimalNeonCoverPage(
+    doc: PDFKit.PDFDocument,
+    metadata: VideoMetadata,
+    _thumbnailBuffer: Buffer | null | undefined, // Not used in minimal-neon design
+    sectionCount: number,
+    summary?: ContentSummary
+  ): void {
+    const { theme } = this;
+    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
+
+    // Fill background
+    this.fillMinimalNeonBackground(doc);
+
+    // Header top: tag badge + date
+    const tagBadgeY = theme.margins.top;
+
+    // Tag badge with dot
+    doc
+      .circle(theme.margins.left + 4, tagBadgeY + 5, 4)
+      .fill(MINIMAL_NEON_COLORS.neonGreen);
+
+    doc
+      .font(theme.fonts.timestamp.name)
+      .fontSize(11)
+      .fillColor(MINIMAL_NEON_COLORS.neonGreen)
+      .text('VIDEO SUMMARY', theme.margins.left + 16, tagBadgeY);
+
+    // Date (right side)
+    const dateText = `생성일: ${new Date().toISOString().split('T')[0]}`;
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(10)
+      .fillColor(MINIMAL_NEON_COLORS.gray500)
+      .text(dateText, doc.page.width - theme.margins.right - 100, tagBadgeY, {
+        width: 100,
+        align: 'right',
+      });
+
+    // Border line
+    doc.y = tagBadgeY + 30;
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .moveTo(theme.margins.left, doc.y)
+      .lineTo(doc.page.width - theme.margins.right, doc.y)
+      .stroke();
+
+    doc.moveDown(2);
+
+    // Title (large, bold)
+    doc
+      .font(theme.fonts.title.name)
+      .fontSize(40)
+      .fillColor(MINIMAL_NEON_COLORS.white)
+      .text(normalizeTextForPDF(metadata.title), theme.margins.left, doc.y, {
+        width: pageWidth,
+        align: 'left',
+        lineGap: -2,
+      });
+
+    doc.moveDown(0.5);
+
+    // Subtitle (channel name as subtitle)
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(18)
+      .fillColor(MINIMAL_NEON_COLORS.gray300)
+      .text(normalizeTextForPDF(metadata.channel), { width: pageWidth });
+
+    doc.moveDown(1.5);
+
+    // Metadata grid (4 columns)
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .moveTo(theme.margins.left, doc.y)
+      .lineTo(doc.page.width - theme.margins.right, doc.y)
+      .stroke();
+
+    doc.moveDown(1);
+
+    const metaItems = [
+      { label: 'CHANNEL', value: metadata.channel },
+      { label: 'DURATION', value: formatTimestamp(metadata.duration) },
+      { label: 'SECTIONS', value: `${sectionCount}개` },
+      { label: 'TYPE', value: VIDEO_TYPE_LABELS[metadata.videoType || 'unknown'] },
+    ];
+
+    const colWidth = pageWidth / 4;
+    const metaStartY = doc.y;
+
+    metaItems.forEach((item, idx) => {
+      const x = theme.margins.left + idx * colWidth;
+
+      doc
+        .font(theme.fonts.timestamp.name)
+        .fontSize(9)
+        .fillColor(MINIMAL_NEON_COLORS.gray500)
+        .text(item.label, x, metaStartY, { width: colWidth - 10 });
+
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(12)
+        .fillColor(MINIMAL_NEON_COLORS.white)
+        .text(normalizeTextForPDF(item.value), x, metaStartY + 15, { width: colWidth - 10 });
+    });
+
+    doc.y = metaStartY + 45;
+
+    // YouTube link row
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .moveTo(theme.margins.left, doc.y)
+      .lineTo(doc.page.width - theme.margins.right, doc.y)
+      .stroke();
+
+    doc.moveDown(1);
+
+    doc
+      .font(theme.fonts.timestamp.name)
+      .fontSize(9)
+      .fillColor(MINIMAL_NEON_COLORS.gray500)
+      .text('YOUTUBE LINK', theme.margins.left, doc.y);
+
+    doc.moveDown(0.3);
+
+    const youtubeUrl = `https://youtube.com/watch?v=${metadata.id}`;
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(12)
+      .fillColor(MINIMAL_NEON_COLORS.neonBlue)
+      .text(youtubeUrl, { link: youtubeUrl });
+
+    // Summary section (if available)
+    if (summary && summary.summary) {
+      doc.moveDown(2);
+      this.renderMinimalNeonSectionLabel(doc, 'Executive Summary', pageWidth);
+
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(12)
+        .fillColor(MINIMAL_NEON_COLORS.gray100)
+        .text(normalizeTextForPDF(summary.summary), {
+          width: pageWidth,
+          lineGap: 6,
+        });
+
+      // Key insights (if available)
+      if (summary.keyPoints && summary.keyPoints.length > 0) {
+        doc.moveDown(1.5);
+        this.renderMinimalNeonSectionLabel(doc, 'Key Insights', pageWidth);
+        this.renderMinimalNeonInsightCards(doc, summary.keyPoints, pageWidth);
+      }
+    }
+
+    // Footer
+    doc.y = doc.page.height - theme.margins.bottom - 40;
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(9)
+      .fillColor(MINIMAL_NEON_COLORS.gray500)
+      .text('Generated by yt2pdf', { align: 'center' });
+
+    doc.moveDown(0.3);
+    doc
+      .fontSize(8)
+      .text('영상 정보 및 자막의 저작권은 원 제작자에게 있습니다.', { align: 'center' });
+  }
+
+  /**
+   * Render insight cards in minimal-neon style
+   */
+  private renderMinimalNeonInsightCards(
+    doc: PDFKit.PDFDocument,
+    keyPoints: string[],
+    pageWidth: number
+  ): void {
+    const { theme } = this;
+
+    // Border around all cards
+    const startY = doc.y;
+    const cardPadding = 20;
+
+    keyPoints.forEach((point, idx) => {
+      if (idx > 0) {
+        // Draw separator line
+        doc
+          .strokeColor(MINIMAL_NEON_COLORS.border)
+          .lineWidth(1)
+          .moveTo(theme.margins.left, doc.y)
+          .lineTo(theme.margins.left + pageWidth, doc.y)
+          .stroke();
+      }
+
+      doc.y += cardPadding;
+
+      // Number (left column)
+      const numStr = String(idx + 1).padStart(2, '0');
+      doc
+        .font(theme.fonts.title.name)
+        .fontSize(24)
+        .fillColor(MINIMAL_NEON_COLORS.neonGreen)
+        .text(numStr, theme.margins.left, doc.y, { width: 50 });
+
+      // Content (right column)
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(11)
+        .fillColor(MINIMAL_NEON_COLORS.gray300)
+        .text(normalizeTextForPDF(point), theme.margins.left + 60, doc.y, {
+          width: pageWidth - 70,
+        });
+
+      doc.moveDown(0.8);
+    });
+
+    // Draw border around all cards
+    const endY = doc.y;
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .rect(theme.margins.left, startY - 5, pageWidth, endY - startY + 10)
+      .stroke();
+  }
+
+  /**
+   * Render minimal-neon TOC (Table of Contents)
+   */
+  private renderMinimalNeonTOC(
+    doc: PDFKit.PDFDocument,
+    sections: PDFSection[],
+    _videoId: string
+  ): void {
+    doc.addPage();
+    this.fillMinimalNeonBackground(doc);
+
+    const { theme } = this;
+    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
+
+    this.renderMinimalNeonSectionLabel(doc, 'Table of Contents', pageWidth);
+    doc.moveDown(0.5);
+
+    // Draw TOC border
+    const tocStartY = doc.y;
+
+    sections.forEach((section, idx) => {
+      const timestamp = formatTimestamp(section.timestamp);
+      const title = section.chapterTitle ||
+        section.sectionSummary?.summary?.substring(0, 50) ||
+        `섹션 ${idx + 1}`;
+
+      // Border bottom for each item (except last)
+      if (idx > 0) {
+        doc
+          .strokeColor(MINIMAL_NEON_COLORS.border)
+          .lineWidth(1)
+          .moveTo(theme.margins.left, doc.y)
+          .lineTo(theme.margins.left + pageWidth, doc.y)
+          .stroke();
+      }
+
+      const itemY = doc.y + 12;
+
+      // Time column (left)
+      doc
+        .font(theme.fonts.timestamp.name)
+        .fontSize(11)
+        .fillColor(MINIMAL_NEON_COLORS.neonBlue)
+        .text(timestamp, theme.margins.left + 15, itemY, { width: 60 });
+
+      // Vertical separator
+      doc
+        .strokeColor(MINIMAL_NEON_COLORS.border)
+        .lineWidth(1)
+        .moveTo(theme.margins.left + 80, itemY - 5)
+        .lineTo(theme.margins.left + 80, itemY + 15)
+        .stroke();
+
+      // Title column (right)
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(11)
+        .fillColor(MINIMAL_NEON_COLORS.gray100)
+        .text(normalizeTextForPDF(title), theme.margins.left + 95, itemY, {
+          width: pageWidth - 110,
+        });
+
+      doc.y = itemY + 25;
+    });
+
+    // Draw outer border
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .rect(theme.margins.left, tocStartY - 5, pageWidth, doc.y - tocStartY + 5)
+      .stroke();
+  }
+
+  /**
+   * Render a single section in minimal-neon style
+   */
+  private renderMinimalNeonSection(
+    doc: PDFKit.PDFDocument,
+    section: PDFSection,
+    _videoId: string, // Reserved for future timestamp link support
+    sectionIndex: number
+  ): void {
+    const { theme } = this;
+    const pageWidth = doc.page.width - theme.margins.left - theme.margins.right;
+
+    // Fill background
+    this.fillMinimalNeonBackground(doc);
+
+    // Detailed Analysis section label (only for first section after TOC)
+    if (sectionIndex === 0) {
+      this.renderMinimalNeonSectionLabel(doc, 'Detailed Analysis', pageWidth);
+      doc.moveDown(0.5);
+    }
+
+    // Detail section box
+    const sectionStartY = doc.y;
+
+    // Draw outer border
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .rect(theme.margins.left, sectionStartY, pageWidth, 0) // Will update height later
+      .stroke();
+
+    // Header bar (elevated background)
+    doc
+      .rect(theme.margins.left, sectionStartY, pageWidth, 45)
+      .fill(MINIMAL_NEON_COLORS.bgElevated);
+
+    // Time badge (neon-green background)
+    const timestamp = formatTimestamp(section.timestamp);
+    const timeBadgeWidth = 55;
+    doc
+      .rect(theme.margins.left + 15, sectionStartY + 12, timeBadgeWidth, 22)
+      .fill(MINIMAL_NEON_COLORS.neonGreen);
+
+    doc
+      .font(theme.fonts.timestamp.name)
+      .fontSize(11)
+      .fillColor(MINIMAL_NEON_COLORS.bg)
+      .text(timestamp, theme.margins.left + 15 + 5, sectionStartY + 17, {
+        width: timeBadgeWidth - 10,
+        align: 'center',
+      });
+
+    // Section title
+    const sectionTitle = section.chapterTitle ||
+      section.sectionSummary?.summary?.substring(0, 60) ||
+      `섹션 ${sectionIndex + 1}`;
+
+    doc
+      .font(theme.fonts.heading.name)
+      .fontSize(14)
+      .fillColor(MINIMAL_NEON_COLORS.white)
+      .text(normalizeTextForPDF(sectionTitle), theme.margins.left + timeBadgeWidth + 30, sectionStartY + 15, {
+        width: pageWidth - timeBadgeWidth - 50,
+      });
+
+    // Header bottom border
+    doc.y = sectionStartY + 45;
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .moveTo(theme.margins.left, doc.y)
+      .lineTo(theme.margins.left + pageWidth, doc.y)
+      .stroke();
+
+    doc.y += 20;
+
+    // Screenshot with rounded corners (simulated)
+    try {
+      const imgWidth = Math.min(pageWidth - 40, 400);
+      const imgHeight = imgWidth * 9 / 16;
+      const imgX = theme.margins.left + 20;
+
+      // Image background placeholder
+      doc
+        .rect(imgX, doc.y, imgWidth, imgHeight)
+        .fill(MINIMAL_NEON_COLORS.bgElevated);
+
+      doc.image(section.screenshot.imagePath, imgX, doc.y, {
+        fit: [imgWidth, imgHeight],
+      });
+
+      doc.y += imgHeight + 15;
+    } catch {
+      doc
+        .font(theme.fonts.body.name)
+        .fontSize(11)
+        .fillColor(MINIMAL_NEON_COLORS.gray500)
+        .text('[이미지 로드 실패]', { align: 'center' });
+      doc.moveDown();
+    }
+
+    // Key Points with left border
+    if (section.sectionSummary?.keyPoints && section.sectionSummary.keyPoints.length > 0) {
+      doc
+        .font(theme.fonts.timestamp.name)
+        .fontSize(9)
+        .fillColor(MINIMAL_NEON_COLORS.gray500)
+        .text('KEY POINTS', theme.margins.left + 20, doc.y);
+
+      doc.moveDown(0.5);
+
+      section.sectionSummary.keyPoints.forEach((point) => {
+        // Left border
+        doc
+          .strokeColor(MINIMAL_NEON_COLORS.border)
+          .lineWidth(2)
+          .moveTo(theme.margins.left + 20, doc.y)
+          .lineTo(theme.margins.left + 20, doc.y + 18)
+          .stroke();
+
+        doc
+          .font(theme.fonts.body.name)
+          .fontSize(11)
+          .fillColor(MINIMAL_NEON_COLORS.gray100)
+          .text(normalizeTextForPDF(point), theme.margins.left + 35, doc.y, {
+            width: pageWidth - 55,
+          });
+
+        doc.moveDown(0.5);
+      });
+    }
+
+    // Main Information bullets with tags
+    if (section.sectionSummary?.mainInformation?.bullets && section.sectionSummary.mainInformation.bullets.length > 0) {
+      doc.moveDown(0.5);
+
+      doc
+        .font(theme.fonts.timestamp.name)
+        .fontSize(9)
+        .fillColor(MINIMAL_NEON_COLORS.gray500)
+        .text('주요 정보', theme.margins.left + 20, doc.y);
+
+      doc.moveDown(0.5);
+
+      const tagPattern = /^\[([A-Z_]+)\]\s*/;
+
+      section.sectionSummary.mainInformation.bullets.forEach((bullet) => {
+        const tagMatch = bullet.match(tagPattern);
+        const startX = theme.margins.left + 20;
+
+        if (tagMatch) {
+          const tagName = tagMatch[1];
+          const content = bullet.slice(tagMatch[0].length);
+          const tagColors = MINIMAL_NEON_TAG_COLORS[tagName] || { bg: MINIMAL_NEON_COLORS.bgSubtle, text: MINIMAL_NEON_COLORS.gray300 };
+
+          // Tag badge
+          const tagWidth = doc.widthOfString(tagName) + 12;
+          doc
+            .rect(startX, doc.y - 2, tagWidth, 16)
+            .fill(tagColors.bg);
+
+          doc
+            .font(theme.fonts.timestamp.name)
+            .fontSize(8)
+            .fillColor(tagColors.text)
+            .text(tagName, startX + 6, doc.y, { width: tagWidth, continued: false });
+
+          doc
+            .font(theme.fonts.body.name)
+            .fontSize(11)
+            .fillColor(MINIMAL_NEON_COLORS.gray300)
+            .text(normalizeTextForPDF(content), startX + tagWidth + 10, doc.y - 14, {
+              width: pageWidth - tagWidth - 50,
+            });
+        } else {
+          doc
+            .font(theme.fonts.body.name)
+            .fontSize(11)
+            .fillColor(MINIMAL_NEON_COLORS.gray300)
+            .text(normalizeTextForPDF(`• ${bullet}`), startX, doc.y, {
+              width: pageWidth - 40,
+            });
+        }
+
+        doc.moveDown(0.3);
+      });
+    }
+
+    // Notable Quotes with blue left border
+    if (section.sectionSummary?.notableQuotes && section.sectionSummary.notableQuotes.length > 0) {
+      doc.moveDown(0.8);
+
+      // Quote block background
+      const quoteStartY = doc.y;
+      const quoteBoxHeight = 20 + section.sectionSummary.notableQuotes.length * 25;
+
+      doc
+        .rect(theme.margins.left + 20, quoteStartY, pageWidth - 40, quoteBoxHeight)
+        .fill(MINIMAL_NEON_COLORS.bgElevated);
+
+      // Blue left border
+      doc
+        .rect(theme.margins.left + 20, quoteStartY, 3, quoteBoxHeight)
+        .fill(MINIMAL_NEON_COLORS.neonBlue);
+
+      doc
+        .font(theme.fonts.timestamp.name)
+        .fontSize(9)
+        .fillColor(MINIMAL_NEON_COLORS.neonBlue)
+        .text('NOTABLE QUOTES', theme.margins.left + 35, quoteStartY + 10);
+
+      doc.y = quoteStartY + 28;
+
+      section.sectionSummary.notableQuotes.forEach((quote) => {
+        doc
+          .font(theme.fonts.body.name)
+          .fontSize(11)
+          .fillColor(MINIMAL_NEON_COLORS.white)
+          .text(normalizeTextForPDF(`"${quote}"`), theme.margins.left + 35, doc.y, {
+            width: pageWidth - 60,
+          });
+        doc.moveDown(0.3);
+      });
+
+      doc.y = quoteStartY + quoteBoxHeight + 10;
+    }
+
+    // Draw outer border for the section
+    const sectionEndY = doc.y + 20;
+    doc
+      .strokeColor(MINIMAL_NEON_COLORS.border)
+      .lineWidth(1)
+      .rect(theme.margins.left, sectionStartY, pageWidth, sectionEndY - sectionStartY)
+      .stroke();
+
+    // Footer
+    doc.y = doc.page.height - theme.margins.bottom - 20;
+    doc
+      .font(theme.fonts.body.name)
+      .fontSize(8)
+      .fillColor(MINIMAL_NEON_COLORS.gray500)
+      .text('Generated by yt2pdf', { align: 'center' });
+  }
+
   /**
    * 테마 로드
    */
-  private loadTheme(_themeName: string): Theme {
-    // 현재는 기본 테마만 지원
-    // 향후 테마 파일 로드 로직 추가
+  private loadTheme(themeName: string): Theme {
+    // 레이아웃 기반 테마 선택
+    if (this.config.layout === 'minimal-neon' || themeName === 'minimal-neon') {
+      return MINIMAL_NEON_THEME;
+    }
     return DEFAULT_THEME;
   }
 
@@ -2101,6 +2759,13 @@ ${brief.actionItems.map(item => `    <div class="action-item"><input type="check
    * 사용 가능한 테마 목록
    */
   static getAvailableThemes(): string[] {
-    return ['default', 'note', 'minimal'];
+    return ['default', 'note', 'minimal', 'minimal-neon'];
+  }
+
+  /**
+   * 사용 가능한 레이아웃 목록
+   */
+  static getAvailableLayouts(): string[] {
+    return ['vertical', 'horizontal', 'minimal-neon'];
   }
 }
