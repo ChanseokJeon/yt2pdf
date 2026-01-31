@@ -203,17 +203,20 @@ function ensureContrast(palette: ColorPalette): ColorPalette {
 ### 사용 예시
 
 ```bash
-# URL에서 추출
-yt2pdf https://youtube.com/watch?v=xxx --theme-from https://stripe.com
+# 프리셋 사용
+yt2pdf https://www.youtube.com/watch?v=MGzymaYBiss --theme-from dark
+
+# minimal-neon 프리셋 (Layout6 기반)
+yt2pdf https://www.youtube.com/watch?v=MGzymaYBiss --theme-from minimal-neon
 
 # 이미지에서 추출
-yt2pdf https://youtube.com/watch?v=xxx --theme-from ./brand-logo.png
+yt2pdf https://www.youtube.com/watch?v=MGzymaYBiss --theme-from ./brand-logo.png
 
-# 프리셋 사용
-yt2pdf https://youtube.com/watch?v=xxx --theme-from dark
+# URL에서 추출
+yt2pdf https://www.youtube.com/watch?v=MGzymaYBiss --theme-from https://stripe.com
 
 # 조합
-yt2pdf https://youtube.com/watch?v=xxx --theme-from sepia --layout horizontal
+yt2pdf https://www.youtube.com/watch?v=MGzymaYBiss --theme-from sepia --layout horizontal
 ```
 
 ### 우선순위
