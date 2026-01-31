@@ -539,6 +539,11 @@ export class PDFGenerator {
    * HTML 생성
    */
   async generateHTML(content: PDFContent, outputPath: string): Promise<void> {
+    // Route to minimal-neon HTML generator if layout is minimal-neon
+    if (this.config.layout === 'minimal-neon') {
+      return this.generateMinimalNeonHTML(content, outputPath);
+    }
+
     const timestamp = formatTimestamp;
     const { metadata, sections } = content;
 
@@ -1143,6 +1148,810 @@ ${sections.map((s) => {
 
     await fs.promises.writeFile(outputPath, html, 'utf-8');
     logger.success(`HTML 생성 완료: ${outputPath}`);
+  }
+
+  /**
+   * Minimal Neon HTML 생성 - Layout6_Minimal_Neon_Full.html 템플릿 기반
+   */
+  async generateMinimalNeonHTML(content: PDFContent, outputPath: string): Promise<void> {
+    const { metadata, sections, summary } = content;
+
+    // Helper function to get tag badge class and color
+    const getTagBadgeClass = (tag: string): string => {
+      const tagMap: Record<string, string> = {
+        'INSIGHT': 'insight',
+        'TECHNIQUE': 'technique',
+        'DEFINITION': 'definition',
+        'METRIC': 'metric',
+        'TOOL': 'tool',
+      };
+      return tagMap[tag] || 'insight';
+    };
+
+    // Parse tag from bullet text
+    const parseTaggedBullet = (bullet: string): { tag: string | null; content: string } => {
+      const tagPattern = /^\[([A-Z_]+)\]\s*/;
+      const match = bullet.match(tagPattern);
+      if (match) {
+        return { tag: match[1], content: bullet.slice(match[0].length) };
+      }
+      return { tag: null, content: bullet };
+    };
+
+    // Build TOC items HTML
+    const tocItemsHtml = sections.map((section, idx) => {
+      const ts = formatTimestamp(section.timestamp);
+      const title = section.chapterTitle ||
+        section.sectionSummary?.summary?.substring(0, 50) ||
+        `섹션 ${idx + 1}`;
+      return `                <div class="toc-item"><span class="toc-time">${ts}</span><span class="toc-title">${this.escapeHtml(title)}</span></div>`;
+    }).join('\n');
+
+    // Build Key Insights HTML
+    let keyInsightsHtml = '';
+    if (summary && summary.keyPoints && summary.keyPoints.length > 0) {
+      const insightCards = summary.keyPoints.map((point, idx) => {
+        const num = String(idx + 1).padStart(2, '0');
+        // Try to extract title from the point (first sentence or first few words)
+        const sentences = point.split(/[.!?]/);
+        const title = sentences[0].length > 50 ? sentences[0].substring(0, 47) + '...' : sentences[0];
+        const description = sentences.length > 1 ? sentences.slice(1).join('.').trim() : '';
+        return `                <div class="insight-card">
+                    <div class="insight-num">${num}</div>
+                    <div class="insight-content">
+                        <h4>${this.escapeHtml(title)}</h4>
+                        <p>${this.escapeHtml(description || point)}</p>
+                    </div>
+                </div>`;
+      }).join('\n');
+
+      keyInsightsHtml = `
+        <!-- KEY INSIGHTS -->
+        <section class="section">
+            <div class="section-label">Key Insights</div>
+            <div class="insight-grid">
+${insightCards}
+            </div>
+        </section>
+`;
+    }
+
+    // Build Detail Sections HTML
+    const detailSectionsHtml = sections.map((section, idx) => {
+      const ts = formatTimestamp(section.timestamp);
+      const title = section.chapterTitle ||
+        section.sectionSummary?.summary?.substring(0, 60) ||
+        `섹션 ${idx + 1}`;
+      const imgName = path.basename(section.screenshot.imagePath);
+      const youtubeLink = buildTimestampUrl(metadata.id, section.timestamp);
+
+      // Key Points HTML
+      let keyPointsHtml = '';
+      if (section.sectionSummary?.keyPoints && section.sectionSummary.keyPoints.length > 0) {
+        const bulletItems = section.sectionSummary.keyPoints.map(point =>
+          `                            <li>${this.escapeHtml(point)}</li>`
+        ).join('\n');
+        keyPointsHtml = `
+                    <div class="detail-subsection">
+                        <div class="subsection-label">Key Points</div>
+                        <ul class="bullet-list">
+${bulletItems}
+                        </ul>
+                    </div>`;
+      }
+
+      // Main Information HTML with tags
+      let mainInfoHtml = '';
+      if (section.sectionSummary?.mainInformation) {
+        const mainInfo = section.sectionSummary.mainInformation;
+        let paragraphsHtml = '';
+        let bulletsHtml = '';
+
+        if (mainInfo.paragraphs && mainInfo.paragraphs.length > 0) {
+          paragraphsHtml = mainInfo.paragraphs.map(para =>
+            `                        <p class="text-block">${this.escapeHtml(para)}</p>`
+          ).join('\n');
+        }
+
+        if (mainInfo.bullets && mainInfo.bullets.length > 0) {
+          const taggedBullets = mainInfo.bullets.map(bullet => {
+            const { tag, content } = parseTaggedBullet(bullet);
+            if (tag) {
+              const tagClass = getTagBadgeClass(tag);
+              return `                            <li><span class="tag-badge ${tagClass}">${tag}</span> ${this.escapeHtml(content)}</li>`;
+            }
+            return `                            <li>${this.escapeHtml(bullet)}</li>`;
+          }).join('\n');
+
+          bulletsHtml = `
+                        <ul class="tag-list">
+${taggedBullets}
+                        </ul>`;
+        }
+
+        if (paragraphsHtml || bulletsHtml) {
+          mainInfoHtml = `
+                    <div class="detail-subsection">
+                        <div class="subsection-label">주요 정보</div>
+${paragraphsHtml}
+${bulletsHtml}
+                    </div>`;
+        }
+      }
+
+      // Notable Quotes HTML
+      let quotesHtml = '';
+      if (section.sectionSummary?.notableQuotes && section.sectionSummary.notableQuotes.length > 0) {
+        const quoteItems = section.sectionSummary.notableQuotes.map(quote =>
+          `                        <p>"${this.escapeHtml(quote)}"</p>`
+        ).join('\n');
+        quotesHtml = `
+                    <div class="quote">
+                        <span class="quote-mark">Notable Quotes</span>
+${quoteItems}
+                    </div>`;
+      }
+
+      return `
+            <div class="detail-section">
+                <div class="detail-header">
+                    <a href="${youtubeLink}" target="_blank" class="detail-time">${ts}</a>
+                    <h3 class="detail-title">${this.escapeHtml(title)}</h3>
+                </div>
+                <div class="detail-body">
+                    <div class="image-placeholder" style="background: url('./images/${imgName}') center/cover no-repeat; padding: 0; aspect-ratio: 16/9;">
+                        <img src="./images/${imgName}" alt="Screenshot at ${ts}" style="width: 100%; height: auto; border-radius: 8px;" loading="lazy" onerror="this.outerHTML='<div style=\\'padding:40px;text-align:center;color:#71717a\\'>📷 이미지 로드 실패</div>'">
+                    </div>
+${keyPointsHtml}
+${mainInfoHtml}
+${quotesHtml}
+                </div>
+            </div>
+`;
+    }).join('\n');
+
+    // Executive Summary HTML
+    let execSummaryHtml = '';
+    if (summary && summary.summary) {
+      // Split summary into paragraphs
+      const paragraphs = summary.summary.split(/\n\n|\n/).filter(p => p.trim());
+      const paragraphsHtml = paragraphs.map(para =>
+        `            <p class="text-block">${this.escapeHtml(para)}</p>`
+      ).join('\n');
+
+      execSummaryHtml = `
+        <!-- EXECUTIVE SUMMARY -->
+        <section class="section">
+            <div class="section-label">Executive Summary</div>
+${paragraphsHtml}
+        </section>
+`;
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="${this.detectLanguage(sections)}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="${this.escapeHtml(metadata.title)} - ${this.escapeHtml(metadata.channel)} | YouTube 영상 요약">
+    <meta property="og:title" content="${this.escapeHtml(metadata.title)}">
+    <meta property="og:description" content="${this.escapeHtml(metadata.channel)}의 YouTube 영상 요약">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://youtube.com/watch?v=${metadata.id}">
+    ${metadata.thumbnail ? `<meta property="og:image" content="${metadata.thumbnail}">` : ''}
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="generator" content="yt2pdf">
+    <title>${this.escapeHtml(metadata.title)} | ${this.escapeHtml(metadata.channel)}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #09090b;
+            --bg-elevated: #18181b;
+            --bg-subtle: #27272a;
+            --neon-green: #22c55e;
+            --neon-green-glow: rgba(34, 197, 94, 0.4);
+            --neon-blue: #3b82f6;
+            --neon-blue-glow: rgba(59, 130, 246, 0.4);
+            --neon-purple: #a855f7;
+            --neon-yellow: #eab308;
+            --neon-cyan: #06b6d4;
+            --neon-pink: #ec4899;
+            --white: #fafafa;
+            --gray-100: #e4e4e7;
+            --gray-300: #a1a1aa;
+            --gray-500: #71717a;
+            --gray-700: #3f3f46;
+            --border: #27272a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', 'Space Grotesk', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--white);
+            line-height: 1.8;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 80px 48px;
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 80px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 48px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tag {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--neon-green);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tag::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--neon-green);
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--neon-green-glow);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .date {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--gray-500);
+        }
+
+        .title {
+            font-size: 52px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            line-height: 1.1;
+            margin-bottom: 16px;
+        }
+
+        .subtitle {
+            font-size: 22px;
+            color: var(--gray-300);
+            font-weight: 400;
+            letter-spacing: -0.5px;
+        }
+
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .meta-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .meta-value {
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .meta-value a {
+            color: var(--neon-blue);
+            text-decoration: none;
+        }
+
+        .meta-value a:hover {
+            text-decoration: underline;
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 64px;
+        }
+
+        .section-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--neon-green);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--neon-green) 0%, transparent 100%);
+        }
+
+        /* Content */
+        .text-block {
+            color: var(--gray-100);
+            font-size: 16px;
+            line-height: 1.9;
+        }
+
+        .text-block + .text-block {
+            margin-top: 16px;
+        }
+
+        /* Insight Cards */
+        .insight-grid {
+            display: grid;
+            gap: 1px;
+            background: var(--border);
+            border: 1px solid var(--border);
+        }
+
+        .insight-card {
+            background: var(--bg);
+            padding: 28px 32px;
+            display: grid;
+            grid-template-columns: 48px 1fr;
+            gap: 20px;
+        }
+
+        .insight-card:hover {
+            background: var(--bg-elevated);
+        }
+
+        .insight-num {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--neon-green);
+            line-height: 1;
+        }
+
+        .insight-content h4 {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.3px;
+        }
+
+        .insight-content p {
+            color: var(--gray-300);
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        /* TOC */
+        .toc {
+            border: 1px solid var(--border);
+        }
+
+        .toc-item {
+            display: flex;
+            align-items: stretch;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.15s;
+        }
+
+        .toc-item:last-child {
+            border-bottom: none;
+        }
+
+        .toc-item:hover {
+            background: var(--bg-elevated);
+        }
+
+        .toc-time {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--neon-blue);
+            padding: 16px 20px;
+            min-width: 80px;
+            border-right: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+        }
+
+        .toc-title {
+            padding: 16px 20px;
+            color: var(--gray-100);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* Detail Section */
+        .detail-section {
+            border: 1px solid var(--border);
+            margin-bottom: 48px;
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            padding: 20px 28px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-elevated);
+        }
+
+        .detail-time {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--bg);
+            background: var(--neon-green);
+            padding: 6px 12px;
+            margin-right: 20px;
+            text-decoration: none;
+            transition: box-shadow 0.2s;
+        }
+
+        .detail-time:hover {
+            box-shadow: 0 0 12px var(--neon-green-glow);
+        }
+
+        .detail-title {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .detail-body {
+            padding: 28px;
+        }
+
+        .detail-subsection {
+            margin-bottom: 28px;
+        }
+
+        .detail-subsection:last-child {
+            margin-bottom: 0;
+        }
+
+        .subsection-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--gray-500);
+            margin-bottom: 14px;
+        }
+
+        /* Image placeholder */
+        .image-placeholder {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+
+        .image-placeholder img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .bullet-list {
+            list-style: none;
+        }
+
+        .bullet-list li {
+            color: var(--gray-100);
+            font-size: 15px;
+            padding: 10px 0;
+            padding-left: 20px;
+            border-left: 2px solid var(--border);
+            margin-left: 8px;
+        }
+
+        .bullet-list li:hover {
+            border-left-color: var(--neon-green);
+        }
+
+        /* Tags */
+        .tag-list {
+            list-style: none;
+            margin-top: 16px;
+        }
+
+        .tag-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--gray-300);
+        }
+
+        .tag-badge {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .tag-badge.insight { background: rgba(34, 197, 94, 0.2); color: var(--neon-green); }
+        .tag-badge.technique { background: rgba(59, 130, 246, 0.2); color: var(--neon-blue); }
+        .tag-badge.definition { background: rgba(168, 85, 247, 0.2); color: var(--neon-purple); }
+        .tag-badge.metric { background: rgba(234, 179, 8, 0.2); color: var(--neon-yellow); }
+        .tag-badge.tool { background: rgba(6, 182, 212, 0.2); color: var(--neon-cyan); }
+
+        /* Quote */
+        .quote {
+            background: var(--bg-elevated);
+            border-left: 3px solid var(--neon-blue);
+            padding: 20px 24px;
+            margin-top: 20px;
+        }
+
+        .quote p {
+            font-size: 15px;
+            font-style: italic;
+            color: var(--white);
+            line-height: 1.7;
+            margin-bottom: 8px;
+        }
+
+        .quote p:last-child {
+            margin-bottom: 0;
+        }
+
+        .quote-mark {
+            color: var(--neon-blue);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        /* Conclusion */
+        .conclusion {
+            border: 2px solid var(--neon-green);
+            padding: 48px;
+            text-align: center;
+            position: relative;
+            margin-top: 64px;
+        }
+
+        .conclusion::before {
+            content: 'CONCLUSION';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg);
+            padding: 0 16px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            color: var(--neon-green);
+        }
+
+        .conclusion h3 {
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            margin-bottom: 20px;
+        }
+
+        .conclusion p {
+            color: var(--gray-300);
+            font-size: 16px;
+            line-height: 1.8;
+            max-width: 650px;
+            margin: 0 auto 16px;
+        }
+
+        .highlight {
+            color: var(--neon-green);
+            font-weight: 600;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 80px;
+            padding-top: 32px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer p {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            color: var(--gray-500);
+            letter-spacing: 0.5px;
+        }
+
+        .footer p + p {
+            margin-top: 4px;
+        }
+
+        .footer a {
+            color: var(--neon-blue);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Page break for print */
+        @media print {
+            body { background: white; color: black; }
+            .container { padding: 20px; }
+            .detail-section, .toc, .insight-grid { border-color: #ddd; }
+            .detail-header { background: #f5f5f5; }
+            .page-break { page-break-before: always; }
+            .tag::before { box-shadow: none; animation: none; }
+        }
+
+        .page-break {
+            height: 1px;
+            margin: 64px 0;
+            border-top: 1px dashed var(--border);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container { padding: 40px 24px; }
+            .title { font-size: 32px; }
+            .subtitle { font-size: 18px; }
+            .meta { grid-template-columns: repeat(2, 1fr); }
+            .insight-card { grid-template-columns: 36px 1fr; padding: 20px; }
+            .insight-num { font-size: 24px; }
+            .detail-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .detail-time { margin-right: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header class="header">
+            <div class="header-top">
+                <div class="tag">Video Summary</div>
+                <div class="date">생성일: ${new Date().toISOString().split('T')[0]}</div>
+            </div>
+            <h1 class="title">${this.escapeHtml(metadata.title)}</h1>
+            <p class="subtitle">${this.escapeHtml(metadata.channel)}</p>
+            <div class="meta">
+                <div class="meta-item">
+                    <span class="meta-label">Channel</span>
+                    <span class="meta-value">${this.escapeHtml(metadata.channel)}</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Duration</span>
+                    <span class="meta-value">${formatTimestamp(metadata.duration)} (${sections.length}개 섹션)</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Sections</span>
+                    <span class="meta-value">${sections.length}개</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Type</span>
+                    <span class="meta-value">${VIDEO_TYPE_LABELS[metadata.videoType || 'unknown'] || '기타'}</span>
+                </div>
+            </div>
+            <div class="meta" style="margin-top: 16px; padding-top: 16px;">
+                <div class="meta-item" style="grid-column: span 4;">
+                    <span class="meta-label">YouTube Link</span>
+                    <span class="meta-value"><a href="https://youtube.com/watch?v=${metadata.id}" target="_blank">https://youtube.com/watch?v=${metadata.id}</a></span>
+                </div>
+            </div>
+        </header>
+
+${execSummaryHtml}
+${keyInsightsHtml}
+        <!-- TABLE OF CONTENTS -->
+        <section class="section">
+            <div class="section-label">Table of Contents</div>
+            <div class="toc">
+${tocItemsHtml}
+            </div>
+        </section>
+
+        <div class="page-break"></div>
+
+        <!-- DETAILED ANALYSIS -->
+        <section class="section">
+            <div class="section-label">Detailed Analysis</div>
+${detailSectionsHtml}
+        </section>
+
+        <!-- CONCLUSION -->
+        ${this.generateConclusionHtml(summary)}
+
+        <!-- FOOTER -->
+        <footer class="footer">
+            <p>Generated by <a href="https://github.com/user/yt2pdf">yt2pdf</a></p>
+            <p>영상 정보 및 자막의 저작권은 원 제작자에게 있습니다.</p>
+        </footer>
+    </div>
+</body>
+</html>`;
+
+    await fs.promises.writeFile(outputPath, html, 'utf-8');
+    logger.success(`Minimal Neon HTML 생성 완료: ${outputPath}`);
+  }
+
+  /**
+   * Conclusion HTML 생성
+   */
+  private generateConclusionHtml(summary: ContentSummary | undefined): string {
+    if (!summary || !summary.summary || !summary.keyPoints || summary.keyPoints.length === 0) {
+      return '';
+    }
+
+    const firstKeyPoint = summary.keyPoints[0];
+    // Extract key phrase from first key point (first few words or first sentence)
+    const keyPhrase = firstKeyPoint.split(/[:.]/)[0].trim();
+
+    return `
+        <div class="conclusion">
+            <h3>핵심 인사이트: <span class="highlight">${this.escapeHtml(keyPhrase)}</span></h3>
+            <p>${this.escapeHtml(summary.summary)}</p>
+        </div>
+`;
+  }
+
+  /**
+   * HTML 이스케이프 헬퍼
+   */
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   /**
