@@ -77,6 +77,13 @@ const PRESETS: Record<string, ColorPalette> = {
     text: '#064e3b',
     link: '#10b981',
   },
+  'minimal-neon': {
+    primary: '#22c55e',
+    secondary: '#71717a',
+    background: '#09090b',
+    text: '#fafafa',
+    link: '#3b82f6',
+  },
 };
 
 const DEFAULT_PALETTE: ColorPalette = PRESETS.light;

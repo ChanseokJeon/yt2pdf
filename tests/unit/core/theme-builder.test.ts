@@ -348,10 +348,11 @@ describe('ThemeBuilder', () => {
       expect(AVAILABLE_PRESETS).toContain('dark');
       expect(AVAILABLE_PRESETS).toContain('sepia');
       expect(AVAILABLE_PRESETS).toContain('forest');
+      expect(AVAILABLE_PRESETS).toContain('minimal-neon');
     });
 
     it('should have correct count', () => {
-      expect(AVAILABLE_PRESETS.length).toBe(4);
+      expect(AVAILABLE_PRESETS.length).toBe(5);
     });
   });
 
