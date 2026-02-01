@@ -448,7 +448,10 @@ Output JSON:
           {
             role: 'system',
             content: `Create a comprehensive summary from section summaries. Output in ${langName}.
-Format: {"summary": "3-5 sentence summary", "keyPoints": ["top 5 key points"]}`,
+Format: {"summary": "3-5 sentence summary", "keyPoints": ["SHORT_TITLE: detailed description", ...]}
+Each keyPoint MUST follow the format: "SHORT_TITLE: description"
+- SHORT_TITLE should be 2-5 words, punchy and memorable (like a headline)
+- Examples: "10배 격차: AI를 100% 도입하면...", "코드 비용 절감: AI로 코드 작성 비용이..."`,
           },
           {
             role: 'user',

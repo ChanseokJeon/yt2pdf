@@ -1277,16 +1277,81 @@ ${sections
       const insightCards = summary.keyPoints
         .map((point, idx) => {
           const num = String(idx + 1).padStart(2, '0');
-          // Try to extract title from the point (first sentence or first few words)
-          const sentences = point.split(/[.!?]/);
-          const title =
-            sentences[0].length > 50 ? sentences[0].substring(0, 47) + '...' : sentences[0];
-          const description = sentences.length > 1 ? sentences.slice(1).join('.').trim() : '';
+
+          let title: string;
+          let description: string = point;
+
+          // Strategy 1: Extract quoted terms with various quote styles
+          // Match Korean-style quotes: '...', "...", 「...」, 『...』, '...', "..."
+          const quotePatterns = [
+            /[\u2018\u2019\u0027]([^\u2018\u2019\u0027]{2,25})[\u2018\u2019\u0027]/, // Single quotes: ', ', '
+            /[\u201C\u201D\u0022]([^\u201C\u201D\u0022]{2,25})[\u201C\u201D\u0022]/, // Double quotes: ", ", "
+            /\u300C([^\u300D]{2,25})\u300D/, // Korean bracket: 「」
+            /\u300E([^\u300F]{2,25})\u300F/, // Korean double bracket: 『』
+          ];
+
+          let quotedMatch = null;
+          for (const pattern of quotePatterns) {
+            quotedMatch = point.match(pattern);
+            if (quotedMatch) break;
+          }
+
+          if (quotedMatch) {
+            title = quotedMatch[1];
+          }
+          // Strategy 2: Look for "X 사례" or "X 격차" patterns at the START
+          else if (point.match(/^([가-힣A-Za-z0-9]+\s*(사례|격차|원칙|방식|효과|전략|모델|도입|엔지니어링))/)) {
+            const match = point.match(/^([가-힣A-Za-z0-9]+\s*(사례|격차|원칙|방식|효과|전략|모델|도입|엔지니어링))/);
+            title = match![1];
+          }
+          // Strategy 3: Look for colon/dash pattern
+          else {
+            const colonMatch = point.match(/^(.{3,25}?)\s*[:：\-–—]\s*(.+)$/s);
+            if (colonMatch && colonMatch[1].trim().length >= 3) {
+              title = colonMatch[1].trim();
+              description = colonMatch[2].trim();
+            }
+            // Strategy 4: Smarter fallback - strip quotes first, then extract words
+            else {
+              // Remove leading quotes and extract clean words
+              const cleanPoint = point.replace(/^['''"""「」『』]+/, '').trim();
+              const words = cleanPoint.split(/\s+/);
+
+              // Take first 3 words, max 18 chars
+              let shortTitle = '';
+              for (let i = 0; i < Math.min(3, words.length); i++) {
+                const nextWord = words[i].replace(/['''"""「」『』()（）]/g, ''); // Strip quotes/parens
+                if ((shortTitle + ' ' + nextWord).trim().length > 18) break;
+                shortTitle = shortTitle ? shortTitle + ' ' + nextWord : nextWord;
+              }
+              title = shortTitle || cleanPoint.substring(0, 15);
+            }
+          }
+
+          // Final check: If title is too long, truncate smartly
+          const MAX_TITLE_LENGTH = 12;
+          if (title.length > MAX_TITLE_LENGTH) {
+            // Try to cut at a natural boundary (space, slash, parenthesis)
+            const naturalBreak = title.substring(0, MAX_TITLE_LENGTH).lastIndexOf(' ');
+            const slashBreak = title.substring(0, MAX_TITLE_LENGTH).lastIndexOf('/');
+            const parenBreak = title.substring(0, MAX_TITLE_LENGTH).lastIndexOf('(');
+
+            const breakPoint = Math.max(naturalBreak, slashBreak, parenBreak);
+            if (breakPoint > 5) {
+              title = title.substring(0, breakPoint).trim();
+            } else {
+              title = title.substring(0, MAX_TITLE_LENGTH - 1).trim() + '…';
+            }
+          }
+
+          // Remove trailing connectives (로, 은, 는, 이, 가, 을, 를, 의, 에, 서)
+          title = title.replace(/[로은는이가을를의에서]$/, '').trim();
+
           return `                <div class="insight-card">
                     <div class="insight-num">${num}</div>
                     <div class="insight-content">
                         <h4>${this.escapeHtml(title)}</h4>
-                        <p>${this.escapeHtml(description || point)}</p>
+                        <p>${this.escapeHtml(description)}</p>
                     </div>
                 </div>`;
         })
@@ -1959,7 +2024,7 @@ ${paragraphsHtml}
                 <div class="date">생성일: ${new Date().toISOString().split('T')[0]}</div>
             </div>
             <h1 class="title">${this.escapeHtml(metadata.title)}</h1>
-            <p class="subtitle">${this.escapeHtml(metadata.channel)}</p>
+            <p class="subtitle">${this.escapeHtml(this.getSubtitleFromSummary(summary, metadata.channel))}</p>
             <div class="meta">
                 <div class="meta-item">
                     <span class="meta-label">Channel</span>
@@ -2158,6 +2223,32 @@ ${detailSectionsHtml}
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * Get subtitle from summary (first sentence) or fallback to channel name
+   */
+  private getSubtitleFromSummary(summary: ContentSummary | undefined, fallback: string): string {
+    if (!summary?.summary) return fallback;
+
+    // Extract first sentence
+    const firstSentence = summary.summary.split(/(?<=[.!?])\s+/)[0];
+
+    // Limit to ~60 characters with smart word boundary
+    const maxLength = 60;
+    if (firstSentence.length <= maxLength) {
+      return firstSentence;
+    }
+
+    // Find word boundary before maxLength
+    const truncated = firstSentence.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+
+    if (lastSpace > 30) {
+      return truncated.substring(0, lastSpace) + '...';
+    }
+
+    return truncated + '...';
   }
 
   /**
