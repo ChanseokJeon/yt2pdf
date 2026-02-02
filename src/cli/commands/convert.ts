@@ -87,13 +87,9 @@ export async function convertCommand(url: string | undefined, options: ConvertCo
     spinner.text = '설정 로드 중...';
     const config = await configManager.load(cliOptions);
 
-    // Dev mode 설정 적용
+    // Dev mode 설정 적용 (하드코딩된 빠른 테스트 설정 사용)
     if (options.dev) {
-      config.dev = {
-        ...config.dev,
-        enabled: true,
-        maxChapters: options.devChapters ? parseInt(options.devChapters, 10) : config.dev.maxChapters,
-      };
+      config.dev = { enabled: true };
       spinner.text = '[DEV] 개발 모드 활성화...';
     }
 

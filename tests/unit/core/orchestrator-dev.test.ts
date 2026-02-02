@@ -1,27 +1,18 @@
 /**
- * Orchestrator dev mode 테스트
+ * Orchestrator dev mode 테스트 (단순화됨)
  */
 
-import { ConfigSchema } from '../../../src/types/config';
+import { ConfigSchema, DEV_MODE_SETTINGS } from '../../../src/types/config';
 
-describe('Orchestrator Dev Mode', () => {
+describe('Orchestrator Dev Mode (simplified)', () => {
   describe('config integration', () => {
-    it('should parse dev mode config correctly', () => {
+    it('should parse dev mode config with only enabled field', () => {
       const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          maxChapters: 2,
-          maxScreenshots: 3,
-          videoQuality: '360p',
-          skipAI: true,
-        },
+        dev: { enabled: true },
       });
 
       expect(config.dev.enabled).toBe(true);
-      expect(config.dev.maxChapters).toBe(2);
-      expect(config.dev.maxScreenshots).toBe(3);
-      expect(config.dev.videoQuality).toBe('360p');
-      expect(config.dev.skipAI).toBe(true);
+      expect(Object.keys(config.dev)).toEqual(['enabled']);
     });
 
     it('should have dev mode disabled by default', () => {
@@ -32,15 +23,11 @@ describe('Orchestrator Dev Mode', () => {
   });
 
   describe('chapter limiting logic', () => {
-    it('should limit chapters when dev mode is enabled', () => {
+    it('should limit chapters using DEV_MODE_SETTINGS when dev mode is enabled', () => {
       const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          maxChapters: 2,
-        },
+        dev: { enabled: true },
       });
 
-      // Simulate chapter limiting logic
       const fetchedChapters = [
         { title: 'Chapter 1', startTime: 0 },
         { title: 'Chapter 2', startTime: 300 },
@@ -49,24 +36,18 @@ describe('Orchestrator Dev Mode', () => {
       ];
 
       let limitedChapters = fetchedChapters;
-      if (config.dev?.enabled && fetchedChapters.length > 0) {
-        const maxChapters = config.dev.maxChapters || 3;
-        if (fetchedChapters.length > maxChapters) {
-          limitedChapters = fetchedChapters.slice(0, maxChapters);
-        }
+      if (config.dev?.enabled && fetchedChapters.length > DEV_MODE_SETTINGS.maxChapters) {
+        limitedChapters = fetchedChapters.slice(0, DEV_MODE_SETTINGS.maxChapters);
       }
 
-      expect(limitedChapters.length).toBe(2);
+      expect(limitedChapters.length).toBe(DEV_MODE_SETTINGS.maxChapters); // 2
       expect(limitedChapters[0].title).toBe('Chapter 1');
       expect(limitedChapters[1].title).toBe('Chapter 2');
     });
 
     it('should not limit chapters when dev mode is disabled', () => {
       const config = ConfigSchema.parse({
-        dev: {
-          enabled: false,
-          maxChapters: 2,
-        },
+        dev: { enabled: false },
       });
 
       const fetchedChapters = [
@@ -76,128 +57,68 @@ describe('Orchestrator Dev Mode', () => {
       ];
 
       let limitedChapters = fetchedChapters;
-      if (config.dev?.enabled && fetchedChapters.length > 0) {
-        const maxChapters = config.dev.maxChapters || 3;
-        if (fetchedChapters.length > maxChapters) {
-          limitedChapters = fetchedChapters.slice(0, maxChapters);
-        }
+      if (config.dev?.enabled && fetchedChapters.length > DEV_MODE_SETTINGS.maxChapters) {
+        limitedChapters = fetchedChapters.slice(0, DEV_MODE_SETTINGS.maxChapters);
       }
 
       expect(limitedChapters.length).toBe(3); // All chapters
     });
+  });
 
-    it('should not limit if chapters are less than maxChapters', () => {
+  describe('AI sampling logic', () => {
+    it('should sample AI processing using DEV_MODE_SETTINGS when dev mode is enabled', () => {
       const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          maxChapters: 5,
-        },
+        dev: { enabled: true },
       });
 
-      const fetchedChapters = [
-        { title: 'Chapter 1', startTime: 0 },
-        { title: 'Chapter 2', startTime: 300 },
+      const sections = [
+        { timestamp: 0, content: 'Section 1' },
+        { timestamp: 300, content: 'Section 2' },
+        { timestamp: 600, content: 'Section 3' },
       ];
 
-      let limitedChapters = fetchedChapters;
-      if (config.dev?.enabled && fetchedChapters.length > 0) {
-        const maxChapters = config.dev.maxChapters || 3;
-        if (fetchedChapters.length > maxChapters) {
-          limitedChapters = fetchedChapters.slice(0, maxChapters);
-        }
+      const shouldSample = config.dev?.enabled && sections.length > DEV_MODE_SETTINGS.aiSampleSections;
+
+      let sectionsToProcess = sections;
+      let sectionsToSkip: typeof sections = [];
+
+      if (shouldSample) {
+        sectionsToProcess = sections.slice(0, DEV_MODE_SETTINGS.aiSampleSections);
+        sectionsToSkip = sections.slice(DEV_MODE_SETTINGS.aiSampleSections);
       }
 
-      expect(limitedChapters.length).toBe(2); // All chapters kept
+      expect(shouldSample).toBe(true);
+      expect(sectionsToProcess.length).toBe(DEV_MODE_SETTINGS.aiSampleSections); // 1
+      expect(sectionsToSkip.length).toBe(2);
+    });
+
+    it('should not sample when dev mode is disabled', () => {
+      const config = ConfigSchema.parse({
+        dev: { enabled: false },
+      });
+
+      const sections = [
+        { timestamp: 0, content: 'Section 1' },
+        { timestamp: 300, content: 'Section 2' },
+      ];
+
+      const shouldSample = config.dev?.enabled && sections.length > DEV_MODE_SETTINGS.aiSampleSections;
+
+      expect(shouldSample).toBe(false);
     });
   });
 
-  describe('skipAI logic', () => {
-    it('should skip AI processing when skipAI is true', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          skipAI: true,
-        },
-      });
-
-      const shouldSkipAI = config.dev?.enabled && config.dev?.skipAI;
-      expect(shouldSkipAI).toBe(true);
-    });
-
-    it('should not skip AI when skipAI is false', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          skipAI: false,
-        },
-      });
-
-      const shouldSkipAI = config.dev?.enabled && config.dev?.skipAI;
-      expect(shouldSkipAI).toBe(false);
-    });
-
-    it('should not skip AI when dev mode is disabled', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: false,
-          skipAI: true, // This should be ignored
-        },
-      });
-
-      const shouldSkipAI = config.dev?.enabled && config.dev?.skipAI;
-      expect(shouldSkipAI).toBe(false);
-    });
-
-    it('should return placeholder summary when skipAI is true', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          skipAI: true,
-        },
-      });
-
-      // Simulate generateSummary behavior
-      let summary;
-      if (config.dev?.enabled && config.dev?.skipAI) {
-        summary = {
-          summary: '[DEV MODE: AI 요약 생략됨]',
-          keyPoints: ['[DEV MODE: AI 처리 생략됨]'],
-          language: config.summary.language || 'ko',
-        };
-      }
-
-      expect(summary).toBeDefined();
-      expect(summary!.summary).toBe('[DEV MODE: AI 요약 생략됨]');
-      expect(summary!.keyPoints).toContain('[DEV MODE: AI 처리 생략됨]');
-    });
-  });
-
-  describe('video quality for dev mode', () => {
-    it('should use dev quality when enabled', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          videoQuality: '360p',
-        },
-      });
-
-      expect(config.dev.videoQuality).toBe('360p');
-    });
-
-    it('should support lowest quality option', () => {
-      const config = ConfigSchema.parse({
-        dev: {
-          enabled: true,
-          videoQuality: 'lowest',
-        },
-      });
-
-      expect(config.dev.videoQuality).toBe('lowest');
+  describe('DEV_MODE_SETTINGS values', () => {
+    it('should have expected hardcoded values', () => {
+      expect(DEV_MODE_SETTINGS.maxChapters).toBe(2);
+      expect(DEV_MODE_SETTINGS.maxScreenshots).toBe(2);
+      expect(DEV_MODE_SETTINGS.videoQuality).toBe('360p');
+      expect(DEV_MODE_SETTINGS.aiSampleSections).toBe(1);
     });
   });
 
   describe('production warning', () => {
-    it('should detect production paths', () => {
+    it('should detect production paths when dev mode enabled', () => {
       const config = ConfigSchema.parse({
         dev: { enabled: true },
       });

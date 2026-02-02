@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Config, ConvertOptions } from '../types/config.js';
+import { Config, ConvertOptions, DEV_MODE_SETTINGS } from '../types/config.js';
 import {
   ConvertResult,
   PipelineState,
@@ -166,11 +166,9 @@ export class Orchestrator {
     // Dev mode logging and warning
     if (this.config.dev?.enabled) {
       logger.warn('='.repeat(50));
-      logger.warn('[DEV MODE] 개발 모드 활성화 - 축소된 출력');
-      logger.warn(`  최대 챕터: ${this.config.dev.maxChapters || 3}`);
-      logger.warn(`  최대 스크린샷: ${this.config.dev.maxScreenshots || 3}`);
-      logger.warn(`  비디오 품질: ${this.config.dev.videoQuality || '360p'}`);
-      logger.warn(`  AI 처리: ${this.config.dev.skipAI ? '생략' : '활성화'}`);
+      logger.warn('[DEV MODE] 개발 모드 활성화 - 빠른 테스트용');
+      logger.warn(`  챕터: ${DEV_MODE_SETTINGS.maxChapters}개, 스크린샷: ${DEV_MODE_SETTINGS.maxScreenshots}개`);
+      logger.warn(`  품질: ${DEV_MODE_SETTINGS.videoQuality}, AI: ${DEV_MODE_SETTINGS.aiSampleSections}개 섹션만`);
       logger.warn('='.repeat(50));
 
       // Production warning
@@ -190,12 +188,9 @@ export class Orchestrator {
 
       // Apply dev mode chapter limiting (BEFORE AI processing)
       let initialChapters = fetchedChapters;
-      if (this.config.dev?.enabled && fetchedChapters.length > 0) {
-        const maxChapters = this.config.dev.maxChapters || 3;
-        if (fetchedChapters.length > maxChapters) {
-          initialChapters = fetchedChapters.slice(0, maxChapters);
-          logger.warn(`[DEV MODE] 챕터 제한: ${fetchedChapters.length}개 중 ${maxChapters}개만 처리`);
-        }
+      if (this.config.dev?.enabled && fetchedChapters.length > DEV_MODE_SETTINGS.maxChapters) {
+        initialChapters = fetchedChapters.slice(0, DEV_MODE_SETTINGS.maxChapters);
+        logger.warn(`[DEV MODE] 챕터: ${fetchedChapters.length}개 → ${DEV_MODE_SETTINGS.maxChapters}개`);
       }
 
       // 2. 자막 추출 및 번역
@@ -303,14 +298,8 @@ export class Orchestrator {
 
     let audioPath: string | undefined;
     if (!metadata.availableCaptions.length && this.whisper) {
-      // In dev mode with skipAI, skip Whisper entirely
-      if (this.config.dev?.enabled && this.config.dev?.skipAI) {
-        logger.warn('[DEV MODE] YouTube 자막 없음 + skipAI=true: 자막 없이 진행');
-        // Continue without audio - will result in empty subtitles
-      } else {
-        this.updateState({ currentStep: '오디오 다운로드 (Whisper용)', progress: 25 });
-        audioPath = await this.youtube.downloadAudio(videoId, tempDir);
-      }
+      this.updateState({ currentStep: '오디오 다운로드 (Whisper용)', progress: 25 });
+      audioPath = await this.youtube.downloadAudio(videoId, tempDir);
     }
 
     const subtitles = await subtitleExtractor.extract(videoId, audioPath);
@@ -321,8 +310,7 @@ export class Orchestrator {
       this.config.translation.enabled &&
       this.config.translation.autoTranslate &&
       this.ai &&
-      subtitles.segments.length > 0 &&
-      !(this.config.dev?.enabled && this.config.dev?.skipAI)
+      subtitles.segments.length > 0
     ) {
       const defaultLang = this.config.translation.defaultLanguage;
       const subtitleLang = subtitles.language;
@@ -361,7 +349,7 @@ export class Orchestrator {
     let chapters = [...initialChapters];
 
     // 영상 유형 분류
-    if (this.ai && processedSegments.length > 0 && !(this.config.dev?.enabled && this.config.dev?.skipAI)) {
+    if (this.ai && processedSegments.length > 0) {
       this.updateState({ currentStep: '영상 유형 분류', progress: 34 });
 
       try {
@@ -381,8 +369,6 @@ export class Orchestrator {
       } catch (e) {
         logger.warn('영상 유형 분류 실패', e as Error);
       }
-    } else if (this.config.dev?.enabled && this.config.dev?.skipAI) {
-      logger.info('[DEV MODE] 영상 유형 분류 생략');
     }
 
     // 챕터 자동 생성
@@ -390,8 +376,7 @@ export class Orchestrator {
       chapters.length === 0 &&
       this.config.chapter.autoGenerate &&
       this.ai &&
-      processedSegments.length > 0 &&
-      !(this.config.dev?.enabled && this.config.dev?.skipAI)
+      processedSegments.length > 0
     ) {
       this.updateState({ currentStep: '챕터 자동 생성', progress: 35 });
       logger.info('AI 기반 챕터 자동 생성 중...');
@@ -407,8 +392,6 @@ export class Orchestrator {
       } catch (e) {
         logger.warn('챕터 자동 생성 실패', e as Error);
       }
-    } else if (this.config.dev?.enabled && this.config.dev?.skipAI && chapters.length === 0) {
-      logger.info('[DEV MODE] AI 챕터 생성 생략');
     }
 
     // 메타데이터에 챕터 추가
@@ -425,16 +408,6 @@ export class Orchestrator {
   private async generateSummary(
     processedSegments: SubtitleSegment[]
   ): Promise<ContentSummary | undefined> {
-    // Skip in dev mode with skipAI - return placeholder
-    if (this.config.dev?.enabled && this.config.dev?.skipAI) {
-      logger.info('[DEV MODE] AI 요약 생성 생략');
-      return {
-        summary: '[DEV MODE: AI 요약 생략됨]',
-        keyPoints: ['[DEV MODE: AI 처리 생략됨]'],
-        language: this.config.summary.language || 'ko',
-      };
-    }
-
     if (!this.config.summary.enabled || !this.ai || processedSegments.length === 0) {
       return undefined;
     }
@@ -481,9 +454,9 @@ export class Orchestrator {
       youtube: this.youtube,
       config: this.config.screenshot,
       tempDir,
-      // Pass dev mode options
-      devQuality: this.config.dev?.enabled ? this.config.dev.videoQuality : undefined,
-      devMaxScreenshots: this.config.dev?.enabled ? this.config.dev.maxScreenshots : undefined,
+      // Pass dev mode options (hardcoded settings)
+      devQuality: this.config.dev?.enabled ? DEV_MODE_SETTINGS.videoQuality : undefined,
+      devMaxScreenshots: this.config.dev?.enabled ? DEV_MODE_SETTINGS.maxScreenshots : undefined,
       onProgress: (current, total) => {
         const baseProgress = 40;
         const progressRange = 30;
@@ -560,22 +533,6 @@ export class Orchestrator {
     videoId: string,
     useChapters: boolean
   ): Promise<void> {
-    // Dev mode: Add placeholder section summaries while preserving chapter titles
-    if (this.config.dev?.enabled && this.config.dev?.skipAI) {
-      logger.info('[DEV MODE] 통합 AI 처리 생략 - 섹션별 플레이스홀더 적용');
-      for (const section of content.sections) {
-        // Preserve YouTube chapter title if it was stored in sectionSummary.summary
-        if (section.sectionSummary?.summary && !section.chapterTitle) {
-          section.chapterTitle = section.sectionSummary.summary;
-        }
-        section.sectionSummary = {
-          summary: '[DEV MODE: 섹션 요약 생략됨]',
-          keyPoints: ['[DEV MODE: AI 처리 생략됨]'],
-        };
-      }
-      return;
-    }
-
     if (
       !this.unifiedProcessor ||
       !this.config.summary.enabled ||
@@ -586,24 +543,22 @@ export class Orchestrator {
     }
 
     // Dev mode: AI sampling - only process first N sections
-    const aiSampleSections = this.config.dev?.enabled
-      ? (this.config.dev?.aiSampleSections ?? 2)
-      : 0;
-    const shouldSample = aiSampleSections > 0 && content.sections.length > aiSampleSections;
+    const isDevMode = this.config.dev?.enabled;
+    const shouldSample = isDevMode && content.sections.length > DEV_MODE_SETTINGS.aiSampleSections;
 
     try {
       const sectionType = useChapters ? '챕터별' : '섹션별';
 
       // Determine which sections to process with AI
       const sectionsToProcess = shouldSample
-        ? content.sections.slice(0, aiSampleSections)
+        ? content.sections.slice(0, DEV_MODE_SETTINGS.aiSampleSections)
         : content.sections;
       const sectionsToSkip = shouldSample
-        ? content.sections.slice(aiSampleSections)
+        ? content.sections.slice(DEV_MODE_SETTINGS.aiSampleSections)
         : [];
 
       if (shouldSample) {
-        logger.info(`[DEV MODE] AI 샘플링: ${content.sections.length}개 중 ${aiSampleSections}개만 AI 처리`);
+        logger.info(`[DEV MODE] AI: ${content.sections.length}개 → ${DEV_MODE_SETTINGS.aiSampleSections}개만 처리`);
       }
 
       this.updateState({ currentStep: `통합 AI 처리 (번역 + ${sectionType} 요약)`, progress: 77 });

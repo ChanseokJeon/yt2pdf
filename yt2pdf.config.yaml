@@ -53,11 +53,7 @@ ai:
   provider: openai     # openai
   model: gpt-5.2   # 사용할 모델 (best quality)
 
-# 개발 모드 설정
+# 개발 모드 (--dev 플래그로 활성화)
+# 빠른 테스트용: 챕터 2개, 스크린샷 2개, AI 1개 섹션만
 dev:
-  enabled: false       # --dev 플래그로 활성화
-  maxChapters: 3       # 최대 챕터 수
-  maxScreenshots: 3    # 최대 스크린샷 수
-  videoQuality: '360p' # lowest, 360p, 480p
-  skipAI: false        # AI 요약 활성화 (true면 전체 생략)
-  aiSampleSections: 2  # AI 처리할 섹션 수 (0=전체, 2=첫 2개만)
+  enabled: false

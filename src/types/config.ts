@@ -81,12 +81,15 @@ export const ChapterConfigSchema = z.object({
 
 export const DevConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  maxChapters: z.number().min(1).max(10).default(3),
-  maxScreenshots: z.number().min(1).max(10).default(3),
-  videoQuality: z.enum(['lowest', '360p', '480p']).default('360p'),
-  skipAI: z.boolean().default(true),
-  aiSampleSections: z.number().min(0).max(10).default(2), // AI 처리할 섹션 수 (0=전체)
 });
+
+// Dev mode hardcoded settings (not configurable)
+export const DEV_MODE_SETTINGS = {
+  maxChapters: 2,
+  maxScreenshots: 2,
+  videoQuality: '360p' as const,
+  aiSampleSections: 1, // AI 기능 확인용 1개만
+} as const;
 
 export const ConfigSchema = z.object({
   output: OutputConfigSchema.default({}),
