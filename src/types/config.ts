@@ -85,6 +85,7 @@ export const DevConfigSchema = z.object({
   maxScreenshots: z.number().min(1).max(10).default(3),
   videoQuality: z.enum(['lowest', '360p', '480p']).default('360p'),
   skipAI: z.boolean().default(true),
+  aiSampleSections: z.number().min(0).max(10).default(2), // AI 처리할 섹션 수 (0=전체)
 });
 
 export const ConfigSchema = z.object({

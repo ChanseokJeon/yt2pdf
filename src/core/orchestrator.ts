@@ -585,14 +585,33 @@ export class Orchestrator {
       return;
     }
 
+    // Dev mode: AI sampling - only process first N sections
+    const aiSampleSections = this.config.dev?.enabled
+      ? (this.config.dev?.aiSampleSections ?? 2)
+      : 0;
+    const shouldSample = aiSampleSections > 0 && content.sections.length > aiSampleSections;
+
     try {
       const sectionType = useChapters ? '챕터별' : '섹션별';
+
+      // Determine which sections to process with AI
+      const sectionsToProcess = shouldSample
+        ? content.sections.slice(0, aiSampleSections)
+        : content.sections;
+      const sectionsToSkip = shouldSample
+        ? content.sections.slice(aiSampleSections)
+        : [];
+
+      if (shouldSample) {
+        logger.info(`[DEV MODE] AI 샘플링: ${content.sections.length}개 중 ${aiSampleSections}개만 AI 처리`);
+      }
+
       this.updateState({ currentStep: `통합 AI 처리 (번역 + ${sectionType} 요약)`, progress: 77 });
       logger.info('통합 AI 처리 시작...');
 
       const summaryLang = this.config.summary.language || this.config.translation.defaultLanguage;
       const unifiedResult = await this.unifiedProcessor.processAllSections(
-        content.sections.map((s) => ({ timestamp: s.timestamp, subtitles: s.subtitles })),
+        sectionsToProcess.map((s) => ({ timestamp: s.timestamp, subtitles: s.subtitles })),
         {
           videoId,
           sourceLanguage: subtitles.language || 'en',
@@ -603,8 +622,8 @@ export class Orchestrator {
         }
       );
 
-      // 결과 적용
-      for (const section of content.sections) {
+      // 결과 적용 - AI 처리된 섹션
+      for (const section of sectionsToProcess) {
         const enhanced = unifiedResult.sections.get(section.timestamp);
         if (enhanced) {
           if (enhanced.translatedText && subtitles.language !== summaryLang) {
@@ -626,6 +645,18 @@ export class Orchestrator {
         }
       }
 
+      // Dev mode: 스킵된 섹션에 플레이스홀더 적용
+      for (const section of sectionsToSkip) {
+        // Preserve YouTube chapter title
+        if (section.sectionSummary?.summary && !section.chapterTitle) {
+          section.chapterTitle = section.sectionSummary.summary;
+        }
+        section.sectionSummary = {
+          summary: '[DEV MODE: AI 샘플링 - 요약 생략됨]',
+          keyPoints: ['[DEV MODE: AI 처리 생략됨]'],
+        };
+      }
+
       // 전체 요약 설정
       if (!content.summary && unifiedResult.globalSummary) {
         content.summary = {
@@ -635,7 +666,8 @@ export class Orchestrator {
         };
       }
 
-      logger.success(`통합 AI 처리 완료: ${unifiedResult.totalTokensUsed} 토큰 사용`);
+      const skippedMsg = shouldSample ? ` (${sectionsToSkip.length}개 섹션 생략)` : '';
+      logger.success(`통합 AI 처리 완료: ${unifiedResult.totalTokensUsed} 토큰 사용${skippedMsg}`);
     } catch (e) {
       logger.warn('통합 AI 처리 실패, 기존 방식으로 폴백', e as Error);
     }
