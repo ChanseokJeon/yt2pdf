@@ -33,6 +33,8 @@ program
   .option('--target-lang <code>', '번역 대상 언어 (기본: ko)', 'ko')
   .option('--no-cache', '캐시 사용 안함')
   .option('--verbose', '상세 로그 출력')
+  .option('--dev', '개발 모드 (빠른 처리, 제한된 출력)')
+  .option('--dev-chapters <n>', '개발 모드 최대 챕터 수 (기본: 3)')
   .action(convertCommand);
 
 // 서브 명령어

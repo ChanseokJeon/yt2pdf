@@ -2865,8 +2865,8 @@ ${brief.actionItems.map((item) => `    <div class="action-item"><input type="che
       const timestamp = formatTimestamp(section.timestamp);
       const pageNum = startPage + i;
 
-      // 섹션 요약 사용 (없으면 첫 자막 fallback)
-      let title = section.sectionSummary?.summary || '';
+      // 챕터 제목 우선, 없으면 섹션 요약, 없으면 첫 자막 fallback
+      let title = section.chapterTitle || section.sectionSummary?.summary || '';
       if (!title) {
         const rawPreview = section.subtitles[0]?.text || '';
         title = normalizeTextForPDF(cleanSubtitleText(rawPreview)).substring(0, 50);

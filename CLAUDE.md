@@ -49,6 +49,32 @@ docs/
 
 ---
 
+## 개발 원칙 (MUST FOLLOW)
+
+### 1. 계획 (Plan)
+- 모든 작업은 TODO 리스트로 상태 관리 (`pending` → `in_progress` → `completed`)
+- 단계마다 진행 상황 기록 및 갱신
+- 복잡한 작업은 `ralplan` 또는 `plan` 스킬로 설계 먼저
+
+### 2. 설계 (Design)
+- **비판적 리뷰 필수**: 3개 이상의 critic/architect 에이전트로 검토 후 취합
+- **오버엔지니어링 경계**: "이게 정말 필요한가?" 항상 질문
+- **필수 기능 중심**: 핵심 요구사항만 설계, 부가 기능은 후순위
+
+### 3. 테스트 (Test)
+- **Unit Test**: 95% 커버리지 목표 (`npm test -- --coverage`)
+- **Integration/E2E Test**: API, 전체 파이프라인 테스트 포함
+- **Browser Test**: 반드시 headless 모드 (`--headless`)
+- 테스트 통과 없이 커밋 금지
+
+### 4. 목표 달성 확인 (Verify)
+- **추측 금지, 직접 확인 필수**
+- 결과물 직접 확인: 파일 읽기, 이미지 보기 (vision), 로그 확인
+- 브라우저 테스트: headless 브라우저로 실제 실행 후 결과 검증
+- "아마 될 것 같다" → ❌ / "직접 확인했다" → ✅
+
+---
+
 ## Development Workflow (Legacy)
 
 This project can also use **Task Master** for task-driven development. The workflow is managed through either MCP tools (preferred for AI agents) or the `task-master` CLI.

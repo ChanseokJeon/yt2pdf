@@ -79,6 +79,14 @@ export const ChapterConfigSchema = z.object({
   maxChapters: z.number().min(1).max(50).default(20), // 최대 챕터 수
 });
 
+export const DevConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  maxChapters: z.number().min(1).max(10).default(3),
+  maxScreenshots: z.number().min(1).max(10).default(3),
+  videoQuality: z.enum(['lowest', '360p', '480p']).default('360p'),
+  skipAI: z.boolean().default(true),
+});
+
 export const ConfigSchema = z.object({
   output: OutputConfigSchema.default({}),
   screenshot: ScreenshotConfigSchema.default({}),
@@ -91,6 +99,7 @@ export const ConfigSchema = z.object({
   translation: TranslationConfigSchema.default({}),
   ai: AIConfigSchema.default({}),
   chapter: ChapterConfigSchema.default({}),
+  dev: DevConfigSchema.default({}),
 });
 
 // ============================================================
@@ -108,6 +117,7 @@ export type SummaryConfig = z.infer<typeof SummaryConfigSchema>;
 export type TranslationConfig = z.infer<typeof TranslationConfigSchema>;
 export type AIConfig = z.infer<typeof AIConfigSchema>;
 export type ChapterConfig = z.infer<typeof ChapterConfigSchema>;
+export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 // ============================================================

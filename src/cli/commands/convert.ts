@@ -29,6 +29,8 @@ interface ConvertCommandOptions {
   targetLang?: string;
   cache?: boolean;
   verbose?: boolean;
+  dev?: boolean;
+  devChapters?: string;
 }
 
 export async function convertCommand(url: string | undefined, options: ConvertCommandOptions) {
@@ -84,6 +86,16 @@ export async function convertCommand(url: string | undefined, options: ConvertCo
     // 설정 로드
     spinner.text = '설정 로드 중...';
     const config = await configManager.load(cliOptions);
+
+    // Dev mode 설정 적용
+    if (options.dev) {
+      config.dev = {
+        ...config.dev,
+        enabled: true,
+        maxChapters: options.devChapters ? parseInt(options.devChapters, 10) : config.dev.maxChapters,
+      };
+      spinner.text = '[DEV] 개발 모드 활성화...';
+    }
 
     // --theme-from 옵션 처리: URL/이미지/프리셋에서 테마 추출
     if (options.themeFrom) {
@@ -154,7 +166,8 @@ export async function convertCommand(url: string | undefined, options: ConvertCo
 
       const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      console.log(chalk.green('\n✓ 변환 완료!\n'));
+      const devPrefix = config.dev?.enabled ? '[DEV] ' : '';
+      console.log(chalk.green(`\n${devPrefix}✓ 변환 완료!\n`));
       console.log(chalk.dim('─'.repeat(50)));
       console.log(`  ${chalk.bold.blue('제목')}     ${result.metadata.title}`);
       console.log(`  ${chalk.bold.blue('채널')}     ${result.metadata.channel}`);

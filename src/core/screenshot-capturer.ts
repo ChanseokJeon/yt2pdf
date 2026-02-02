@@ -16,6 +16,9 @@ export interface ScreenshotCapturerOptions {
   config: ScreenshotConfig;
   tempDir?: string;
   onProgress?: (current: number, total: number) => void;
+  // Dev mode options
+  devQuality?: 'lowest' | '360p' | '480p';
+  devMaxScreenshots?: number;
 }
 
 export class ScreenshotCapturer {
@@ -24,6 +27,8 @@ export class ScreenshotCapturer {
   private config: ScreenshotConfig;
   private tempDir?: string;
   private onProgress?: (current: number, total: number) => void;
+  private readonly devQuality?: string;
+  private readonly devMaxScreenshots?: number;
 
   constructor(options: ScreenshotCapturerOptions) {
     this.ffmpeg = options.ffmpeg;
@@ -31,6 +36,8 @@ export class ScreenshotCapturer {
     this.config = options.config;
     this.tempDir = options.tempDir;
     this.onProgress = options.onProgress;
+    this.devQuality = options.devQuality;
+    this.devMaxScreenshots = options.devMaxScreenshots;
   }
 
   /**
@@ -53,7 +60,17 @@ export class ScreenshotCapturer {
       const videoPath = await this.youtube.downloadVideo(videoId, workDir, qualityFormat);
 
       // 타임스탬프 생성
-      const timestamps = this.ffmpeg.generateTimestamps(duration, this.config.interval);
+      let timestamps = this.ffmpeg.generateTimestamps(duration, this.config.interval);
+
+      // Apply dev mode screenshot limiting (for non-chapter videos)
+      if (this.devMaxScreenshots && timestamps.length > this.devMaxScreenshots) {
+        const originalCount = timestamps.length;
+        // Evenly sample across the video
+        const step = Math.ceil(timestamps.length / this.devMaxScreenshots);
+        timestamps = timestamps.filter((_, i) => i % step === 0).slice(0, this.devMaxScreenshots);
+        logger.warn(`[DEV MODE] 스크린샷 제한: ${originalCount}개 → ${timestamps.length}개로 샘플링`);
+      }
+
       const qualitySize = this.getQualitySize(this.config.quality);
 
       logger.info(`스크린샷 캡처 시작: ${timestamps.length}개`);
@@ -201,6 +218,18 @@ export class ScreenshotCapturer {
    * 품질에 따른 다운로드 포맷
    */
   private getDownloadFormat(quality: ImageQuality): string {
+    // Check for dev mode override
+    if (this.devQuality) {
+      switch (this.devQuality) {
+        case 'lowest':
+          return 'worst';
+        case '360p':
+          return 'worst[height>=360]/best[height<=360]';
+        case '480p':
+          return 'worst[height>=480]/best[height<=480]';
+      }
+    }
+
     switch (quality) {
       case 'high':
         return 'best[height<=1080]';

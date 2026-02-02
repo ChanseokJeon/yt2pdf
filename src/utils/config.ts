@@ -140,6 +140,7 @@ export class ConfigManager {
       translation: { ...base.translation, ...override.translation },
       ai: { ...base.ai, ...override.ai },
       chapter: { ...base.chapter, ...override.chapter },
+      dev: { ...base.dev, ...override.dev },
     };
   }
 
