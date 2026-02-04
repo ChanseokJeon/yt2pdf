@@ -162,21 +162,43 @@ FFMPEG_PATH=/path/to/ffmpeg
 ### 사전 요구사항
 
 - Google Cloud SDK (`gcloud`)
-- GCP 프로젝트
+- GCP 프로젝트 (Cloud Run, Cloud Storage API 활성화)
+- OpenAI API 키 (환경 변수로 설정)
 
 ### 배포
 
 ```bash
 # 1. GCP 프로젝트 설정
 gcloud config set project YOUR_PROJECT_ID
+gcloud auth login
 
-# 2. 배포 실행
-./scripts/deploy-cloudrun.sh
+# 2. 필요한 API 활성화
+gcloud services enable run.googleapis.com storage.googleapis.com cloudbuild.googleapis.com
+
+# 3. 배포 실행
+./scripts/deploy-cloudrun.sh YOUR_PROJECT_ID asia-northeast3
+
+# 4. OpenAI API 키 설정
+gcloud run services update yt2pdf \
+  --region=asia-northeast3 \
+  --set-env-vars="OPENAI_API_KEY=sk-your-api-key"
 ```
+
+### 배포 구성
+
+- **리전**: asia-northeast3 (Seoul) 권장
+- **메모리**: 4Gi (영상 처리용)
+- **CPU**: 2 vCPU
+- **타임아웃**: 600초 (10분)
+- **스토리지**: GCS 버킷 자동 생성 (yt2pdf-output-{PROJECT_ID})
+- **파일 보존**: 7일 후 자동 삭제 (lifecycle rule)
 
 ### API 사용
 
 ```bash
+# 헬스 체크
+curl https://YOUR_SERVICE_URL/api/v1/health
+
 # 동기 변환 (Cloud Run)
 curl -X POST https://YOUR_SERVICE_URL/api/v1/jobs/sync \
   -H "Content-Type: application/json" \
@@ -199,6 +221,12 @@ curl -X POST https://YOUR_SERVICE_URL/api/v1/jobs/sync \
 ```
 
 다운로드 URL은 24시간 후 만료되며, 파일은 7일 후 자동 삭제됩니다.
+
+### 비용 예상 (개인용, ~100 PDF/월)
+
+- Cloud Run: $5-10/월 (요청당 과금, 유휴 시 무료)
+- Cloud Storage: $0.02/GB/월 (대부분 무료 티어 내)
+- OpenAI Whisper: 자막 없는 영상만 (분당 $0.006)
 
 ## 프로그래밍 방식 사용
 

@@ -108,9 +108,10 @@ describe('Health Check Routes', () => {
 
       expect(res.status).toBe(200);
       expect(mockedGetCloudProvider).toHaveBeenCalled();
+      // Storage health check uses actual bucket name from env (defaults to 'yt2pdf-output')
       expect(mockStorageProvider.exists).toHaveBeenCalledWith(
-        'health-check-bucket',
-        'test-key'
+        expect.any(String), // bucket name from env
+        '.health-check'
       );
 
       const data = await res.json();

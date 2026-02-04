@@ -6,7 +6,6 @@
 
 import { Vibrant } from 'node-vibrant/node';
 import chroma from 'chroma-js';
-import puppeteer from 'puppeteer';
 import * as fs from 'fs';
 import { Theme } from './pdf-generator.js';
 
@@ -132,7 +131,16 @@ export async function extractFromImage(imagePath: string): Promise<ColorPalette>
 }
 
 export async function extractFromUrl(url: string, timeout: number): Promise<ColorPalette> {
-  const browser = await puppeteer.launch({
+  // Dynamic import puppeteer (optional dependency)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let puppeteerModule: any;
+  try {
+    puppeteerModule = await import('puppeteer');
+  } catch {
+    throw new Error('Puppeteer is not installed. Install it with: npm install puppeteer');
+  }
+
+  const browser = await puppeteerModule.default.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });

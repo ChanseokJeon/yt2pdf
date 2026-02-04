@@ -29,9 +29,12 @@ async function checkStorageHealth(timeoutMs = 3000): Promise<'healthy' | 'unheal
       setTimeout(() => reject(new Error('Storage health check timeout')), timeoutMs);
     });
 
+    // Get actual bucket name from environment
+    const bucketName = process.env.GCS_BUCKET_NAME || process.env.OUTPUT_BUCKET || 'yt2pdf-output';
+
     // Try a simple exists operation on a non-existent test key
     // This validates credentials and connectivity without side effects
-    const checkPromise = provider.storage.exists('health-check-bucket', 'test-key');
+    const checkPromise = provider.storage.exists(bucketName, '.health-check');
 
     await Promise.race([checkPromise, timeoutPromise]);
     return 'healthy';

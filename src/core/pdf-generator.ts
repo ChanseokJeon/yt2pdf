@@ -8,7 +8,8 @@ import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
 import { PDFDocument as PDFLibDocument, PDFName } from 'pdf-lib';
-import puppeteer from 'puppeteer';
+// Note: puppeteer is loaded dynamically to avoid requiring it when not used
+// Puppeteer is optional - loaded dynamically when needed
 import {
   PDFContent,
   PDFSection,
@@ -99,6 +100,10 @@ function normalizeTextForPDF(text: string): string {
     '」': '"',
     '『': '"',
     '』': '"',
+    '♪': '[music]',
+    '♫': '[music]',
+    '🎵': '[music]',
+    '🎶': '[music]',
   };
   for (const [from, to] of Object.entries(symbolMap)) {
     normalized = normalized.replace(new RegExp(from, 'g'), to);
@@ -2120,8 +2125,17 @@ ${detailSectionsHtml}
 
     logger.info('Puppeteer PDF 생성 시작...');
 
+    // Dynamically import puppeteer (optional dependency)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let puppeteerModule: any;
+    try {
+      puppeteerModule = await import('puppeteer');
+    } catch {
+      throw new Error('Puppeteer is not installed. Install it with: npm install puppeteer');
+    }
+
     // Launch Puppeteer
-    const browser = await puppeteer.launch({
+    const browser = await puppeteerModule.default.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });

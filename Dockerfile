@@ -69,6 +69,9 @@ COPY --from=builder /app/dist ./dist
 # Copy config files needed at runtime
 COPY yt2pdf.config.yaml ./
 
+# Copy Korean fonts for PDF generation
+COPY assets/fonts/ ./assets/fonts/
+
 # Create temp directory
 RUN mkdir -p /tmp/yt2pdf
 

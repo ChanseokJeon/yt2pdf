@@ -214,12 +214,20 @@ function removeExcessiveRepetition(text: string): string {
  * - HTML 엔티티 디코딩
  * - 중복 제거
  * - 공백 정리
+ * - YouTube 음악 마커 정리
  */
 export function cleanSubtitleText(text: string): string {
   let cleaned = decodeHtmlEntities(text);
 
   // VTT 태그 제거
   cleaned = cleaned.replace(/<[^>]+>/g, '');
+
+  // YouTube 음악 마커 제거 (&j는 음악/가사 표시 마커)
+  // 뮤직비디오에서 모든 줄에 붙어 가독성 저하하므로 완전 제거
+  cleaned = cleaned.replace(/\[&j&j&j\]/g, '');
+  cleaned = cleaned.replace(/&j\s*/g, '');
+  cleaned = cleaned.replace(/\[♪+\]/g, '');
+  cleaned = cleaned.replace(/♪\s*/g, '');
 
   // 연속 공백 정리
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
