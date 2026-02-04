@@ -157,6 +157,49 @@ YT_DLP_PATH=/path/to/yt-dlp
 FFMPEG_PATH=/path/to/ffmpeg
 ```
 
+## Cloud Run 배포
+
+### 사전 요구사항
+
+- Google Cloud SDK (`gcloud`)
+- GCP 프로젝트
+
+### 배포
+
+```bash
+# 1. GCP 프로젝트 설정
+gcloud config set project YOUR_PROJECT_ID
+
+# 2. 배포 실행
+./scripts/deploy-cloudrun.sh
+```
+
+### API 사용
+
+```bash
+# 동기 변환 (Cloud Run)
+curl -X POST https://YOUR_SERVICE_URL/api/v1/jobs/sync \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://youtube.com/watch?v=VIDEO_ID"}'
+```
+
+### 응답 예시
+
+```json
+{
+  "jobId": "abc-123",
+  "status": "completed",
+  "downloadUrl": "https://storage.googleapis.com/...",
+  "expiresAt": "2026-02-05T12:00:00.000Z",
+  "stats": {
+    "pages": 15,
+    "processingTime": 45000
+  }
+}
+```
+
+다운로드 URL은 24시간 후 만료되며, 파일은 7일 후 자동 삭제됩니다.
+
 ## 프로그래밍 방식 사용
 
 ```typescript

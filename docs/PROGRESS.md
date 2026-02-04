@@ -212,19 +212,42 @@
 
 ---
 
-## Phase 6: 프로덕션 배포
+## Phase 6: 프로덕션 배포 (Cloud Run + GCS)
 
 ### 상태: 🔄 진행 중
 
+> **설계 변경 (2026-02-04)**: 오버엔지니어링 리뷰 결과, 100건/월 규모에 맞는 최소 MVP로 단순화
+
 | ID | 태스크 | 상태 | 의존성 | 파일 |
 |----|--------|------|--------|------|
-| 6.1 | JobStore 영속화 (Redis/SQLite) | ⬜ 대기 | Phase 4 | docs/JOBSTORE_PERSISTENCE.md 참조 |
-| 6.2 | API 인증/인가 | ⬜ 대기 | 6.1 | API Key 또는 OAuth |
-| 6.3 | Rate Limiting | ⬜ 대기 | 6.2 | - |
-| 6.4 | Dockerfile | ⬜ 대기 | - | Dockerfile |
-| 6.5 | CI/CD 파이프라인 | ⬜ 대기 | 6.4 | .github/workflows/*.yml |
-| 6.6 | README.md 작성 | ⬜ 대기 | - | README.md |
-| 6.7 | GitHub 릴리즈 | ⬜ 대기 | 6.* | - |
+| 6.1 | ~~JobStore 영속화~~ | ❌ 취소 | - | Stateless 설계로 불필요 |
+| 6.2 | ~~API 인증/인가~~ | ❌ 취소 | - | 개인용 도구, 불필요 |
+| 6.3 | ~~Rate Limiting~~ | ❌ 취소 | - | 100건/월에 불필요 |
+| 6.4 | Dockerfile (Cloud Run용) | ✅ 완료 | - | Dockerfile |
+| 6.5 | GCS 연동 (Signed URL) | ✅ 완료 | - | /jobs/sync 엔드포인트 |
+| 6.6 | ~~CI/CD 파이프라인~~ | ❌ 취소 | - | 수동 배포로 시작 |
+| 6.7 | Cloud Run 배포 스크립트 | ✅ 완료 | 6.4, 6.5 | scripts/deploy-cloudrun.sh |
+| 6.8 | README.md 업데이트 | ✅ 완료 | 6.7 | README.md |
+
+### Cloud Run 설정 (Minimal MVP)
+
+```yaml
+memory: 2Gi
+cpu: 1
+timeout: 900s (15분)
+concurrency: 1
+min-instances: 0
+max-instances: 1
+region: asia-northeast3
+```
+
+### GCS 설정
+
+```yaml
+bucket: yt2pdf-output
+lifecycle: 7일 후 자동 삭제
+signed-url: V4, 24시간 만료
+```
 
 ---
 
@@ -274,20 +297,32 @@
 
 ## 다음 작업 상세
 
-### 다음 태스크: 6.1 JobStore 영속화
+### 다음 태스크: 6.4 Dockerfile (Cloud Run용)
 
 **작업 내용**:
-1. In-memory JobStore를 Redis 또는 SQLite로 교체
-2. 마이그레이션 가이드: `docs/JOBSTORE_PERSISTENCE.md` 참조
-3. 프로덕션 환경에서 데이터 영속성 확보
+1. Cloud Run용 Dockerfile 작성
+2. 시스템 의존성 포함 (ffmpeg, yt-dlp)
+3. pdfkit 기본, Puppeteer 옵션
 
-**참조 문서**:
-- [JOBSTORE_PERSISTENCE.md](./JOBSTORE_PERSISTENCE.md) - Redis/SQLite 마이그레이션 가이드
-- [WEB-API-ARCHITECTURE.md](./WEB-API-ARCHITECTURE.md) - 시스템 아키텍처
+**배포 명령어**:
+```bash
+gcloud run deploy yt2pdf \
+  --source . \
+  --region asia-northeast3 \
+  --memory 2Gi \
+  --timeout 900 \
+  --concurrency 1 \
+  --min-instances 0 \
+  --max-instances 1 \
+  --set-env-vars "GCS_BUCKET_NAME=yt2pdf-output" \
+  --allow-unauthenticated
+```
 
-**대안**:
-- Redis: 분산 환경, 고성능 필요시
-- SQLite: 단일 서버, 간단한 배포
+**GCS 버킷 생성**:
+```bash
+gsutil mb -l asia-northeast3 gs://yt2pdf-output
+gsutil lifecycle set lifecycle.json gs://yt2pdf-output
+```
 
 ---
 

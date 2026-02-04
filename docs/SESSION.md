@@ -8,10 +8,10 @@
 
 | 항목 | 값 |
 |------|-----|
-| **날짜** | 2026-02-02 |
-| **세션 ID** | session-005 |
-| **완료한 작업** | Web Service API + 클라우드 프로바이더 추상화 |
-| **다음 작업** | 프로덕션 배포 준비 (JobStore 영속화, 인증, Dockerfile) |
+| **날짜** | 2026-02-04 |
+| **세션 ID** | session-006 |
+| **완료한 작업** | Cloud Run + GCS 배포 설계 및 구현 |
+| **다음 작업** | 빌드 테스트 및 배포 |
 
 ---
 
@@ -28,7 +28,7 @@ YouTube 영상의 자막과 스크린샷을 추출하여 PDF로 변환하는 CLI
 - **사용 형태**: CLI + Claude Code Skill + **Web API**
 - **AI 기능**: OpenAI GPT (요약, 번역)
 - **API 프레임워크**: Hono
-- **클라우드**: AWS (S3/SQS), GCP (Storage/Pub/Sub), Local
+- **배포**: Cloud Run (동기 처리) + GCS (Signed URL, 7일 만료)
 
 ### 문서 구조
 ```

@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { zValidator } from '@hono/zod-validator';
 import {
   CreateJobRequestSchema,
@@ -12,11 +14,134 @@ import {
 import { getJobStore } from '../store/job-store';
 import { getCloudProvider } from '../../cloud';
 import { parseYouTubeUrl } from '../../utils/url';
+import { Orchestrator } from '../../core/orchestrator';
+import { ConfigManager } from '../../utils/config';
 
 const jobs = new Hono();
 
 /**
- * POST /jobs - Create a new conversion job
+ * POST /jobs/sync - Synchronous conversion (for Cloud Run)
+ * Waits for completion and returns download URL directly.
+ * Use this when queue-based processing is not available.
+ */
+jobs.post(
+  '/sync',
+  zValidator('json', CreateJobRequestSchema),
+  async (c) => {
+    const body = c.req.valid('json') as CreateJobRequest;
+    const cloudProvider = await getCloudProvider();
+    const jobId = randomUUID();
+    const startTime = Date.now();
+
+    // Parse YouTube URL
+    const urlInfo = parseYouTubeUrl(body.url);
+    if (!urlInfo) {
+      return c.json({ error: 'Invalid YouTube URL' }, 400);
+    }
+
+    const options = body.options || JobOptionsSchema.parse({});
+    const tempDir = path.join('/tmp/yt2pdf', jobId);
+    const outputBucket = process.env.GCS_BUCKET_NAME || process.env.OUTPUT_BUCKET || 'yt2pdf-output';
+
+    try {
+      // Setup temp directory
+      await fs.mkdir(tempDir, { recursive: true });
+
+      // Load and configure (deep clone to avoid singleton mutation)
+      const configManager = ConfigManager.getInstance();
+      const baseConfig = await configManager.load();
+      const config = JSON.parse(JSON.stringify(baseConfig));
+
+      config.output.format = options.format;
+      config.screenshot.interval = options.screenshotInterval;
+      config.screenshot.quality = options.quality;
+      config.pdf.layout = options.layout;
+      config.translation.enabled = options.includeTranslation;
+      config.summary.enabled = options.includeSummary;
+      if (options.language) {
+        config.subtitle.languages = [options.language];
+      }
+
+      const orchestrator = new Orchestrator({ config });
+
+      // Run conversion with timeout (14 minutes, leaving 1 min buffer for Cloud Run's 15min limit)
+      const TIMEOUT_MS = 14 * 60 * 1000;
+      const result = await Promise.race([
+        orchestrator.process({
+          url: body.url,
+          output: tempDir,
+          format: options.format,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Processing timeout exceeded')), TIMEOUT_MS)
+        ),
+      ]);
+
+      // Read the generated file
+      const buffer = await fs.readFile(result.outputPath);
+
+      // Upload to GCS
+      const outputKey = `results/${jobId}/output.${options.format}`;
+      await cloudProvider.storage.upload(outputBucket, outputKey, buffer, {
+        contentType: options.format === 'pdf' ? 'application/pdf' :
+                     options.format === 'md' ? 'text/markdown' :
+                     options.format === 'html' ? 'text/html' : 'application/octet-stream',
+      });
+
+      // Generate signed URL (24 hours)
+      const signedUrl = await cloudProvider.storage.getSignedUrl(
+        outputBucket,
+        outputKey,
+        { expiresInSeconds: 86400, action: 'read' }
+      );
+
+      const processingTime = Date.now() - startTime;
+
+      return c.json({
+        jobId,
+        status: 'completed',
+        downloadUrl: signedUrl,
+        expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+        videoMetadata: result.metadata ? {
+          title: result.metadata.title,
+          channel: result.metadata.channel,
+          duration: result.metadata.duration,
+          thumbnail: result.metadata.thumbnail,
+        } : undefined,
+        stats: {
+          pages: result.stats.pages,
+          screenshotCount: result.stats.screenshotCount,
+          fileSize: buffer.length,
+          processingTime,
+        },
+      });
+    } catch (error) {
+      console.error(`[Sync] Conversion failed for ${jobId}:`, error);
+
+      // Sanitize error message (don't expose internal paths or stack traces)
+      const rawMessage = (error as Error).message || 'Unknown error';
+      const safeMessage = rawMessage.includes('/') || rawMessage.includes('\\')
+        ? 'Processing failed. Check server logs for details.'
+        : rawMessage;
+
+      return c.json({
+        jobId,
+        status: 'failed',
+        error: safeMessage,
+      }, 500);
+    } finally {
+      // Cleanup temp directory
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (e) {
+        console.warn(`[Sync] Failed to cleanup temp dir: ${tempDir}`);
+      }
+    }
+  }
+);
+
+/**
+ * POST /jobs - Create a new conversion job (async/queue-based)
  */
 jobs.post(
   '/',
