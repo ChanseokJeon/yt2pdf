@@ -13,8 +13,8 @@ export type JobStatus =
 export const JobOptionsSchema = z.object({
   format: z.enum(['pdf', 'md', 'html', 'brief']).default('pdf'),
   layout: z.enum(['vertical', 'horizontal', 'minimal-neon']).default('vertical'),
-  screenshotInterval: z.number().min(30).max(600).default(60),
-  quality: z.enum(['low', 'medium', 'high']).default('low'),
+  screenshotInterval: z.number().min(30).max(600).default(60), // 챕터 없을 때만 사용
+  screenshotQuality: z.enum(['low', 'medium', 'high']).default('low'), // 480p/720p/1080p
   language: z.string().optional(),
   includeTranslation: z.boolean().default(false),
   includeSummary: z.boolean().default(true),
