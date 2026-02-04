@@ -1,48 +1,79 @@
-# yt2pdf - Cloud Run Dockerfile
-# Minimal MVP for ~100 PDFs/month
-# Uses pdfkit (no Chromium needed for basic PDF generation)
+# yt2pdf - Cloud Run Dockerfile (Optimized)
+# Multi-stage build with Alpine for minimal image size
+# Target: ~500MB (down from ~1GB)
 
-FROM node:20-slim
+# ============================================
+# Stage 1: Build
+# ============================================
+FROM node:20-alpine AS builder
 
-# Install system dependencies (minimal set)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # FFmpeg for screenshot capture
-    ffmpeg \
-    # Fonts for PDF (Korean support - Nanum is 33MB vs Noto-CJK 300MB)
-    fonts-nanum \
-    # Python for yt-dlp
-    python3 \
-    python3-pip \
-    # CA certificates for HTTPS
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Install yt-dlp
-RUN pip3 install --break-system-packages --no-cache-dir yt-dlp
-
-# Create app directory
 WORKDIR /app
 
-# Copy package files first (layer caching)
-COPY package*.json ./
+# Copy package files
+COPY package.json package-lock.json ./
+COPY package.api.json ./
 
-# Install dependencies
-# Note: --omit=dev replaces deprecated --only=production
-RUN npm ci --omit=dev
+# Install all dependencies for build
+RUN npm ci
 
-# Copy built application
-COPY dist/ ./dist/
+# Copy source and build
+COPY tsconfig.json ./
+COPY src/ ./src/
 
-# Create temp directory for processing
+RUN npm run build
+
+# ============================================
+# Stage 2: Production dependencies
+# ============================================
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Use API-only package.json for minimal dependencies
+COPY package.api.json ./package.json
+
+# Install production dependencies only
+RUN npm install --omit=dev && \
+    npm cache clean --force
+
+# ============================================
+# Stage 3: Runtime
+# ============================================
+FROM node:20-alpine AS runtime
+
+# Install system dependencies (minimal)
+RUN apk add --no-cache \
+    # FFmpeg for screenshot capture
+    ffmpeg \
+    # Korean font (Baekmuk ~11MB, smaller than Noto-CJK)
+    font-baekmuk \
+    # Python for yt-dlp
+    python3 \
+    py3-pip \
+    # Fontconfig for font discovery
+    fontconfig && \
+    # Install yt-dlp
+    pip3 install --break-system-packages --no-cache-dir yt-dlp && \
+    # Refresh font cache
+    fc-cache -f
+
+WORKDIR /app
+
+# Copy production dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Copy config files needed at runtime
+COPY yt2pdf.config.yaml ./
+
+# Create temp directory
 RUN mkdir -p /tmp/yt2pdf
 
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=8080
-
-# Note: Docker HEALTHCHECK is ignored by Cloud Run
-# Cloud Run uses HTTP probes configured via gcloud flags
 
 # Run API server
 CMD ["node", "dist/api/server.js"]

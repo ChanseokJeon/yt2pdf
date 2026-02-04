@@ -1,17 +1,17 @@
-# Dependencies
+# Dependencies (will be installed fresh in Docker)
 node_modules/
 
-# Source files (using compiled dist/)
-src/
+# Tests (not needed in production)
 tests/
-*.ts
-tsconfig.json
 
 # Development files
 .git/
 .github/
 .claude/
+.omc/
 docs/
+
+# Markdown (except README)
 *.md
 !README.md
 
@@ -25,13 +25,16 @@ tmp/
 .vscode/
 .idea/
 
-# Test and config
+# Test and lint config
 jest.config.js
 .eslintrc*
 .prettierrc*
 coverage/
 
-# Environment
+# Environment (secrets)
 .env
 .env.*
 !.env.example
+
+# Build artifacts (will be built in Docker)
+dist/
