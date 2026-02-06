@@ -345,11 +345,68 @@ gsutil lifecycle set lifecycle.json gs://yt2pdf-output
 
 ---
 
+## Phase 7: 코드베이스 리팩토링
+
+### 상태: 🔄 진행 중 (Phase 0 완료)
+
+> **계획 문서**: `.omc/plans/refactoring-plan.md` (6-layer verification strategy 포함)
+
+### Phase 0: 테스트 인프라 전제조건
+
+| ID | 태스크 | 상태 | 파일 |
+|----|--------|------|------|
+| 0.1 | PDFKit Mock | ✅ 완료 | tests/__mocks__/pdfkit.ts |
+| 0.2 | 공유 테스트 픽스처 | ✅ 완료 | tests/fixtures/*, tests/helpers/* |
+| 0.3 | 테스트 스크립트 설정 | ✅ 완료 | package.json (test:char, test:golden, etc.) |
+| 0.4 | 시각적 회귀 테스트 설정 | ✅ 완료 | tests/visual/* |
+| 0.5 | 6-Layer 검증 인프라 | ✅ 완료 | .dependency-cruiser.js, scripts/benchmark.js |
+
+### Phase 1: PDF Generator 유틸리티 추출 (예정)
+
+| ID | 태스크 | 상태 | 파일 |
+|----|--------|------|------|
+| 1.1 | 텍스트 정규화 모듈 | ⬜ 대기 | src/utils/text-normalizer.ts |
+| 1.2 | 이미지 유틸리티 모듈 | ⬜ 대기 | src/utils/image.ts |
+| 1.3 | 언어 유틸리티 통합 | ⬜ 대기 | src/utils/language.ts |
+| 1.4 | formatTimestamp 이동 | ⬜ 대기 | src/utils/time.ts |
+
+### Phase 2: PDF Generator 분해 (예정)
+
+| ID | 태스크 | 상태 | 파일 |
+|----|--------|------|------|
+| 2.1 | 테마 시스템 추출 | ⬜ 대기 | src/core/pdf/themes/* |
+| 2.2 | 렌더러 모듈 추출 | ⬜ 대기 | src/core/pdf/renderers/* |
+| 2.3 | 출력 생성기 추출 | ⬜ 대기 | src/core/output/* |
+| 2.4 | Brief 생성기 추출 | ⬜ 대기 | src/core/output/brief-generator.ts |
+| 2.5 | 하위 호환성 파사드 | ⬜ 대기 | src/core/pdf-generator.ts |
+
+### Phase 3: Orchestrator & AI Provider 리팩토링 (예정)
+
+| ID | 태스크 | 상태 | 파일 |
+|----|--------|------|------|
+| 3.0 | 파이프라인 인터페이스 정의 | ⬜ 대기 | src/core/pipeline/interfaces.ts |
+| 3.1 | 파이프라인 스테이지 추출 | ⬜ 대기 | src/core/pipeline/*.ts |
+| 3.2 | AI Provider 통합 | ⬜ 대기 | src/providers/ai/* |
+| 3.3 | 통합 테스트 추가 | ⬜ 대기 | tests/integration/*.ts |
+
+### 리팩토링 검증 스크립트
+
+| 명령어 | 설명 |
+|--------|------|
+| `npm run test:char` | 특성화 테스트 |
+| `npm run test:golden` | 골든 마스터 테스트 |
+| `npm run test:contract` | 계약 테스트 |
+| `npm run test:visual` | 시각적 회귀 테스트 |
+| `npm run depcruise:validate` | 의존성 검증 |
+| `npm run verify:all` | 전체 6-layer 검증 |
+
+---
+
 ## 이슈 및 블로커
 
 | ID | 이슈 | 상태 | 해결 방안 |
 |----|------|------|----------|
-| - | 현재 없음 | - | - |
+| ISS-001 | YouTube IP Blocking (Cloud Run) | 🔴 미해결 | Residential Proxy 필요 ($6/월) |
 
 ---
 

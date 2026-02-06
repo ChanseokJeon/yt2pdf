@@ -9,9 +9,9 @@
 | 항목 | 값 |
 |------|-----|
 | **날짜** | 2026-02-06 |
-| **세션 ID** | session-007 |
-| **완료한 작업** | Token 최적화 + yt-dlp Proxy 지원 + Cloud Run 배포 (IP Blocking 실패) |
-| **다음 작업** | Residential Proxy 설정 + ESLint 정리 |
+| **세션 ID** | session-008 |
+| **완료한 작업** | 리팩토링 Phase 0 완료 (테스트 인프라 구축) |
+| **다음 작업** | Phase 1: PDF Generator 유틸리티 추출 |
 
 ---
 
@@ -44,67 +44,92 @@ docs/
 
 ---
 
-## 최근 완료한 작업: Token 최적화 + yt-dlp Proxy + Cloud Run 배포
+## 최근 완료한 작업: 리팩토링 Phase 0 (테스트 인프라 구축)
 
 ### 커밋 정보
-- **최근 커밋**: `8626d4b` (2026-02-05)
-- **변경**: 패키지 관리 업데이트 (package.json, package-lock.json)
+- **최근 커밋**: `0103a92` (2026-02-06)
+- **변경**: 6-layer 검증 전략 인프라 완료
 - **상태**: Working tree clean (모든 변경 커밋됨)
 
 ### 구현 내용
 
-#### 1. Token 최적화 (session-007)
-- **변경**: `translatedText` 필드 제거
-- **효과**: API 응답 크기 감소, token 사용량 최적화
-- **현황**: 패키지 업데이트 완료
+#### 1. PDFKit Mock (0.1)
+- `tests/__mocks__/pdfkit.ts`: 전체 PDFKit API mock
+- `tests/__mocks__/pdfkit.test.ts`: 48개 mock 동작 테스트
+- Call tracking 지원 (assertions 용)
 
-#### 2. yt-dlp Proxy 지원 추가
-- **목적**: YouTube IP blocking 우회
-- **구현**: `--proxy` 옵션 지원 (Basic/SOCKS5)
-- **테스트**: Cloud Run 배포 시도 → YouTube IP blocking으로 실패
-- **결론**: Proxy 설정만으로는 불충분, residential proxy 필요
+#### 2. 공유 테스트 픽스처 (0.2)
+- `tests/fixtures/video-metadata.ts`: 8개 비디오 메타데이터 변형
+- `tests/fixtures/subtitles.ts`: 9개 자막 세트 (한/영)
+- `tests/fixtures/chapters.ts`: 13개 챕터 구조
+- `tests/helpers/mock-factory.ts`: 20+ 팩토리 함수
 
-#### 3. Cloud Run 배포 실패 분석
-- **증상**: Cloud Run에서 YouTube 액세스 불가 (429 Too Many Requests)
-- **원인**: YouTube의 클라우드 IP 차단
-- **해결책**: Residential proxy (다음 세션) 또는 on-premise 배포 검토
+#### 3. 시각적 회귀 테스트 설정 (0.4)
+- `tests/visual/capture-baseline.ts`: PDF to PNG 변환
+- `tests/visual/visual-regression.test.ts`: 이미지 비교 테스트
+- jest-image-snapshot, pdf2pic 설치
 
-#### 4. 기존 시스템 안정성
-- **REST API**: Hono 프레임워크 (Job 관리, 상태 추적)
-- **클라우드 추상화**: AWS/GCP/Local 지원
-- **보안 수정**: 완료 (Injection, Path Traversal, NACK 버그 등)
-- **테스트**: 596개 테스트, 94%+ 커버리지
+#### 4. 6-Layer 검증 스크립트
+- `npm run test:char`: 특성화 테스트
+- `npm run test:golden`: 골든 마스터 테스트
+- `npm run test:contract`: 계약 테스트
+- `npm run test:visual`: 시각적 회귀 테스트
+- `npm run depcruise:validate`: 의존성 검증
+- `npm run verify:all`: 전체 검증
+
+### 테스트 현황
+- **전체 테스트**: 693개 통과
+- **빌드**: 0 에러
+- **린트**: 0 에러
 
 ---
 
-## 다음 작업 (session-008)
+## 다음 작업 (session-009)
 
-### 긴급: YouTube IP Blocking 해결
-1. **Residential Proxy 설정**
-   - Proxy provider 평가 (Bright Data, Oxylabs, Smart Proxy 등)
-   - yt-dlp proxy 설정 통합
-   - 비용 분석 및 선택
+### 리팩토링 Phase 1: PDF Generator 유틸리티 추출
+> **계획 문서**: `.omc/plans/refactoring-plan.md`
 
-2. **배포 전략 재검토**
-   - Cloud Run (proxy 솔루션 후)
-   - On-premise 배포 (dedicated server)
-   - Hybrid 접근법
+1. **텍스트 정규화 모듈 (1.1)**
+   - `src/utils/text-normalizer.ts` 생성
+   - `normalizeTextForPDF()`, `sanitizeForAI()` 추출
+   - 90%+ 테스트 커버리지
 
-### 코드 정리
-1. **ESLint 규칙 정리**
-   - 현재 ESLint 정책 검토
-   - 일관되지 않은 규칙 정정
-   - 빌드 경고 해결
+2. **이미지 유틸리티 모듈 (1.2)**
+   - `src/utils/image.ts` 생성
+   - `downloadImageToBuffer()`, 폰트 경로 유틸리티 추출
+   - 90%+ 테스트 커버리지
 
-### 프로덕션 배포 준비 (이후)
-1. **JobStore 영속화**: In-memory → Redis 또는 SQLite
-2. **인증/인가**: API Key 또는 OAuth 추가
-3. **Rate Limiting**: 요청 제한
-4. **CI/CD**: GitHub Actions 배포 파이프라인
+3. **언어 유틸리티 통합 (1.3)**
+   - `src/utils/language.ts` 생성
+   - `getLanguageName()`, `LANGUAGE_MAP` 통합
+   - 중복 제거
+
+4. **formatTimestamp 이동 (1.4)**
+   - `src/utils/time.ts` 생성
+   - `formatTimestamp()`, `parseTimestamp()` 구현
+   - 하위 호환성 유지
+
+### 검증 방법
+```bash
+npm run verify:all  # 전체 6-layer 검증
+```
+
+### 블로커 (별도 해결 필요)
+- **YouTube IP Blocking**: Cloud Run 배포에 Residential Proxy 필요 ($6/월)
 
 ---
 
 ## 이전 세션 기록
+
+### session-008 (2026-02-06): 리팩토링 Phase 0 완료
+- 6-layer 검증 전략 인프라 구축
+- PDFKit mock, 테스트 픽스처, 시각적 회귀 테스트 설정
+- 693개 테스트 통과, 빌드/린트 0 에러
+
+### session-007 (2026-02-06): Token 최적화 + ESLint 정리
+- translatedText 필드 제거로 토큰 최적화
+- ESLint 627개 에러 → 0개로 정리
+- RALPLAN으로 리팩토링 계획 수립
 
 ### session-006 (2026-02-04): Cloud Run + GCS 배포
 - Cloud Run + GCS 배포 설계 및 구현
@@ -185,7 +210,8 @@ export CLOUD_PROVIDER=local
 
 | 날짜 | 변경 내용 |
 |------|----------|
-| 2026-02-06 | Token 최적화 + yt-dlp Proxy 지원 + Cloud Run 배포 (IP Blocking 실패) |
+| 2026-02-06 | 리팩토링 Phase 0 완료 - 테스트 인프라 구축 (session-008) |
+| 2026-02-06 | Token 최적화 + ESLint 정리 + 리팩토링 계획 수립 (session-007) |
 | 2026-02-04 | Cloud Run + GCS 배포 설계 및 구현 |
 | 2026-02-02 | Web Service API + 클라우드 프로바이더 추상화 |
 | 2026-01-30 | PDF 품질 개선 + AI 프롬프트 재설계 |
