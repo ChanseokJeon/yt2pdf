@@ -63,9 +63,10 @@ docs/
 
 ### 3. 테스트 (Test)
 - **Unit Test**: 95% 커버리지 목표 (`npm test -- --coverage`)
+- **Lint**: 0 에러 목표 (`npm run lint`)
 - **Integration/E2E Test**: API, 전체 파이프라인 테스트 포함
 - **Browser Test**: 반드시 headless 모드 (`--headless`)
-- 테스트 통과 없이 커밋 금지
+- 테스트/린트 통과 없이 커밋 금지
 
 ### 4. 검증 (Verify) - 증거 없으면 미완료
 
