@@ -160,33 +160,6 @@ describe('UnifiedContentProcessor', () => {
     });
   });
 
-  describe('getLanguageName', () => {
-    it('should return Korean for ko code', () => {
-      const proc = processor as any;
-      expect(proc.getLanguageName('ko')).toBe('한국어');
-    });
-
-    it('should return English for en code', () => {
-      const proc = processor as any;
-      expect(proc.getLanguageName('en')).toBe('English');
-    });
-
-    it('should return Japanese for ja code', () => {
-      const proc = processor as any;
-      expect(proc.getLanguageName('ja')).toBe('日本語');
-    });
-
-    it('should return Chinese for zh code', () => {
-      const proc = processor as any;
-      expect(proc.getLanguageName('zh')).toBe('中文');
-    });
-
-    it('should return code itself for unknown language', () => {
-      const proc = processor as any;
-      expect(proc.getLanguageName('xyz')).toBe('xyz');
-    });
-  });
-
   describe('cache operations', () => {
     beforeEach(() => {
       jest.clearAllMocks();

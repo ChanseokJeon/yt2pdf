@@ -8,5 +8,7 @@ export * from './cache.js';
 export * from './file.js';
 export * from './url.js';
 export * from './text.js';
+export * from './text-normalizer.js';
 export * from './validation.js';
 export * from './env-validator.js';
+export * from './time.js';

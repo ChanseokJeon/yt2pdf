@@ -5,8 +5,6 @@
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as https from 'https';
-import * as http from 'http';
 import { PDFDocument as PDFLibDocument, PDFName } from 'pdf-lib';
 // Note: puppeteer is loaded dynamically to avoid requiring it when not used
 // Puppeteer is optional - loaded dynamically when needed
@@ -27,152 +25,11 @@ import {
   cleanMixedLanguageText,
 } from '../utils/index.js';
 import { logger } from '../utils/logger.js';
+import { downloadImageToBuffer, getKoreanFontPaths, validateKoreanFont } from '../utils/image.js';
+import { normalizeTextForPDF } from '../utils/text-normalizer.js';
 
-/**
- * 텍스트를 PDF 렌더링에 안전한 형태로 정규화
- * - NFC 정규화 (한글 조합형 → 완성형)
- * - 제어 문자 제거
- * - 특수 유니코드 문자 필터링
- */
-function normalizeTextForPDF(text: string): string {
-  if (!text) return text;
-
-  // 1. NFC 정규화 (한글 조합형 → 완성형)
-  // NFD 형태의 한글(ㅎㅏㄴㄱㅡㄹ)을 NFC 형태(한글)로 변환
-  let normalized = text.normalize('NFC');
-
-  // 2. 제어 문자 제거 (탭, 줄바꿈은 유지)
-  // eslint-disable-next-line no-control-regex
-  normalized = normalized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-
-  // 3. 유니코드 대체 문자(Replacement Character) 제거
-  normalized = normalized.replace(/\uFFFD/g, '');
-
-  // 4. Zero-width 문자 제거 (ZWJ, ZWNJ, ZWSP 등)
-  normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '');
-
-  // 5. 한글 확장 문자 제거 (PDFKit에서 렌더링 실패하는 문자들)
-  // - D7B0-D7FF: 한글 자모 확장-B
-  // - A960-A97F: 한글 자모 확장-A
-  normalized = normalized.replace(/[\uD7B0-\uD7FF\uA960-\uA97F]/g, '');
-
-  // 6. Private Use Area 문자 제거
-  normalized = normalized.replace(/[\uE000-\uF8FF]/g, '');
-
-  // 7. 확장 라틴 문자 처리 (PDFKit 폰트 폴백 문제 방지)
-  // 일반적인 확장 라틴을 기본 ASCII로 변환
-  const latinMap: Record<string, string> = {
-    ħ: 'h',
-    Ħ: 'H',
-    ı: 'i',
-    İ: 'I',
-    Ĩ: 'I',
-    ĩ: 'i',
-    ł: 'l',
-    Ł: 'L',
-    ñ: 'n',
-    Ñ: 'N',
-    ø: 'o',
-    Ø: 'O',
-    ß: 'ss',
-    þ: 'th',
-    Þ: 'Th',
-    đ: 'd',
-    Đ: 'D',
-  };
-  for (const [from, to] of Object.entries(latinMap)) {
-    normalized = normalized.replace(new RegExp(from, 'g'), to);
-  }
-
-  // 7.5. Symbol/Arrow replacements for font compatibility
-  const symbolMap: Record<string, string> = {
-    '→': '->',
-    '←': '<-',
-    '↔': '<->',
-    '⇒': '=>',
-    '⇐': '<=',
-    '⇔': '<=>',
-    '•': '-',
-    '·': '-',
-    '…': '...',
-    '–': '-',
-    '—': '-',
-    '「': '"',
-    '」': '"',
-    '『': '"',
-    '』': '"',
-    '♪': '[music]',
-    '♫': '[music]',
-    '🎵': '[music]',
-    '🎶': '[music]',
-  };
-  for (const [from, to] of Object.entries(symbolMap)) {
-    normalized = normalized.replace(new RegExp(from, 'g'), to);
-  }
-
-  // 8. 나머지 확장 라틴 문자 제거 (Latin Extended-A, B)
-  normalized = normalized.replace(/[\u0100-\u024F]/g, '');
-
-  // 9. 쓰레기 한글 패턴 제거 (한글+ASCII 비정상 혼합)
-  normalized = normalized.replace(/[가-힣][a-z`_]{1,3}[가-힣]/gi, '');
-
-  return normalized;
-}
-
-/**
- * URL에서 이미지를 Buffer로 다운로드
- */
-async function downloadImageToBuffer(url: string): Promise<Buffer | null> {
-  return new Promise((resolve) => {
-    const protocol = url.startsWith('https') ? https : http;
-    const request = protocol.get(url, (response) => {
-      // 리다이렉트 처리
-      if (response.statusCode === 301 || response.statusCode === 302) {
-        const redirectUrl = response.headers.location;
-        if (redirectUrl) {
-          void downloadImageToBuffer(redirectUrl).then(resolve);
-          return;
-        }
-      }
-
-      if (response.statusCode !== 200) {
-        resolve(null);
-        return;
-      }
-
-      const chunks: Buffer[] = [];
-      response.on('data', (chunk: Buffer) => chunks.push(chunk));
-      response.on('end', () => resolve(Buffer.concat(chunks)));
-      response.on('error', () => resolve(null));
-    });
-    request.on('error', () => resolve(null));
-    request.setTimeout(10000, () => {
-      request.destroy();
-      resolve(null);
-    });
-  });
-}
-
-// Font paths - relative to project root
-function getFontsDir(): string {
-  // Try multiple possible locations
-  const possiblePaths = [
-    path.resolve(process.cwd(), 'assets/fonts'),
-    path.resolve(__dirname, '../../assets/fonts'),
-    path.resolve(__dirname, '../../../assets/fonts'),
-  ];
-
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-  return possiblePaths[0]; // default
-}
-
-const FONTS_DIR = getFontsDir();
-const KOREAN_FONT_REGULAR = path.join(FONTS_DIR, 'NotoSansKR-Regular.ttf');
-const KOREAN_FONT_BOLD = path.join(FONTS_DIR, 'NotoSansKR-Bold.ttf');
+// Font paths
+const { regular: KOREAN_FONT_REGULAR, bold: KOREAN_FONT_BOLD } = getKoreanFontPaths();
 
 /**
  * Video type labels for display (extracted from multiple methods to avoid DRY violation)
@@ -221,30 +78,6 @@ export interface Theme {
     paragraphGap: number;
     imageMargin: number;
   };
-}
-
-// Check if Korean fonts are available
-function hasKoreanFonts(): boolean {
-  try {
-    return fs.existsSync(KOREAN_FONT_REGULAR) && fs.existsSync(KOREAN_FONT_BOLD);
-  } catch {
-    return false;
-  }
-}
-
-// Validate Korean font format
-function validateKoreanFont(): boolean {
-  if (!hasKoreanFonts()) return false;
-
-  // Font file extension check
-  const regularExt = path.extname(KOREAN_FONT_REGULAR).toLowerCase();
-  const boldExt = path.extname(KOREAN_FONT_BOLD).toLowerCase();
-
-  if (regularExt === '.otf' || boldExt === '.otf') {
-    logger.warn('OTF 폰트는 한글 렌더링 문제가 발생할 수 있습니다. TTF 사용을 권장합니다.');
-  }
-
-  return true;
 }
 
 const DEFAULT_THEME: Theme = {
@@ -338,6 +171,13 @@ export class PDFGenerator {
    */
   private registerFonts(doc: PDFKit.PDFDocument): void {
     if (validateKoreanFont()) {
+      // Check for OTF fonts and warn
+      const regularExt = path.extname(KOREAN_FONT_REGULAR).toLowerCase();
+      const boldExt = path.extname(KOREAN_FONT_BOLD).toLowerCase();
+      if (regularExt === '.otf' || boldExt === '.otf') {
+        logger.warn('OTF 폰트는 한글 렌더링 문제가 발생할 수 있습니다. TTF 사용을 권장합니다.');
+      }
+
       doc.registerFont('NotoSansKR-Regular', KOREAN_FONT_REGULAR);
       doc.registerFont('NotoSansKR-Bold', KOREAN_FONT_BOLD);
       logger.debug('한글 폰트 로드 완료');

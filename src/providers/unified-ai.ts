@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { SubtitleSegment, CoverMetadata } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { getLanguageName } from '../utils/language.js';
 
 export interface KeyPoint {
   text: string;
@@ -208,7 +209,7 @@ export class UnifiedContentProcessor {
     maxKeyPoints: number,
     includeQuotes: boolean
   ): string {
-    const langName = this.getLanguageName(targetLanguage);
+    const langName = getLanguageName(targetLanguage);
 
     return `Process ALL sections. Output ${langName}.
 
@@ -247,19 +248,6 @@ Output JSON:
 }
 
 ⚠️ CRITICAL: Process EVERY section provided. Do not skip any section.`;
-  }
-
-  /**
-   * 언어 이름 변환
-   */
-  private getLanguageName(code: string): string {
-    const map: Record<string, string> = {
-      ko: '한국어',
-      en: 'English',
-      ja: '日本語',
-      zh: '中文',
-    };
-    return map[code] || code;
   }
 
   /**
@@ -482,7 +470,7 @@ Output JSON:
     sectionContents: EnhancedSectionContent[],
     targetLanguage: string
   ): Promise<CoverMetadata> {
-    const langName = this.getLanguageName(targetLanguage);
+    const langName = getLanguageName(targetLanguage);
 
     const allOneLiners = sectionContents.map((s) => s.oneLiner).filter(Boolean);
     const allKeyPoints = sectionContents.flatMap((s) => s.keyPoints).filter(Boolean);

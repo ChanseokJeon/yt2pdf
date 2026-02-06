@@ -14,26 +14,8 @@ import {
 } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { formatTimestamp } from '../utils/file.js';
-
-/**
- * ISO 639-1 언어 코드 -> 언어 이름 매핑
- */
-const LANGUAGE_MAP: Record<string, string> = {
-  ko: '한국어',
-  en: 'English',
-  ja: '日本語',
-  zh: '中文',
-  es: 'Español',
-  fr: 'Français',
-  de: 'Deutsch',
-};
-
-/**
- * 언어 코드를 언어 이름으로 변환
- */
-function getLanguageName(code: string): string {
-  return LANGUAGE_MAP[code] || code;
-}
+import { getLanguageName } from '../utils/language.js';
+import { sanitizeForAI } from '../utils/text-normalizer.js';
 
 export interface SummaryOptions {
   maxLength?: number; // 최대 문자 수
@@ -72,41 +54,11 @@ export class AIProvider {
    * AI 응답 텍스트에서 이상한 유니코드 문자 제거
    * - 표준 한글 음절(AC00-D7AF)만 허용
    * - 희귀 한글 확장 문자(걻걼걽걾 등) 제거
+   *
+   * @deprecated Use sanitizeForAI from text-normalizer utility
    */
   private sanitizeText(text: string): string {
-    if (!text) return text;
-
-    // 허용할 문자 범위:
-    // - 기본 라틴 문자, 숫자, 공백, 구두점 (0020-007E)
-    // - 표준 한글 음절 (AC00-D7AF) - 가~힣
-    // - 한글 자모 (1100-11FF, 3130-318F) - ㄱ~ㅎ, ㅏ~ㅣ 등
-    // - CJK 통합 한자 (4E00-9FFF) - 가끔 포함될 수 있음
-    // - 일반 구두점, 괄호, 따옴표 등
-    //
-    // 제거할 문자:
-    // - 호환 한글 자모 확장 (3200-321E) - 괄호로 둘러싸인 한글
-    // - 한글 확장-A (A960-A97F)
-    // - 한글 확장-B (D7B0-D7FF) - 걻걼걽걾 같은 이상한 문자들
-
-    const sanitized = text.replace(/[\uD7B0-\uD7FF\uA960-\uA97F\u3200-\u321E]/g, '');
-
-    // 연속된 이상한 패턴 제거 (예: "89:;", "이IJKLM" 같은 깨진 텍스트)
-    // ASCII와 한글이 비정상적으로 섞인 패턴 감지
-    const cleanedOfGarbage = sanitized
-      // 숫자+구두점이 단어 중간에 나타나는 패턴 (예: "89:;")
-      .replace(/[\uAC00-\uD7AF][\d:;]+[\uAC00-\uD7AF]/g, (match) => {
-        // 의미 있는 패턴(시간 표기 등)이 아니면 한글만 유지
-        const hangul = match.replace(/[\d:;]+/g, '');
-        return hangul;
-      })
-      // 연속된 의미 없는 문자 시퀀스 제거
-      .replace(/[A-Z]{4,}[가-힣]/g, (match) => {
-        // "IJKLM이" 같은 패턴 - 마지막 한글만 유지
-        const lastHangul = match.match(/[가-힣]+$/);
-        return lastHangul ? lastHangul[0] : '';
-      });
-
-    return cleanedOfGarbage;
+    return sanitizeForAI(text);
   }
 
   constructor(apiKey?: string, model: string = 'gpt-5.2') {
