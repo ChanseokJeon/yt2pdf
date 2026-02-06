@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-02-06T04:49:53.150Z",
+  "system": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "nodeVersion": "v22.13.1",
+    "cpus": "Apple M2"
+  },
+  "benchmarks": {
+    "build-time": {
+      "name": "build-time",
+      "iterations": 1,
+      "totalMs": 2184.313833,
+      "avgMs": 2184.313833,
+      "opsPerSec": 0
+    },
+    "html-entity-decode": {
+      "name": "html-entity-decode",
+      "iterations": 5000,
+      "totalMs": 60.05304100000012,
+      "avgMs": 0.012010608200000024,
+      "opsPerSec": 83260
+    },
+    "garbage-text-detection": {
+      "name": "garbage-text-detection",
+      "iterations": 10000,
+      "totalMs": 0.7271249999998872,
+      "avgMs": 0.00007271249999998872,
+      "opsPerSec": 13752794
+    },
+    "subtitle-deduplication": {
+      "name": "subtitle-deduplication",
+      "iterations": 2000,
+      "totalMs": 23.58283399999982,
+      "avgMs": 0.01179141699999991,
+      "opsPerSec": 84807
+    },
+    "subtitle-text-cleaning": {
+      "name": "subtitle-text-cleaning",
+      "iterations": 3000,
+      "totalMs": 138.93729200000007,
+      "avgMs": 0.04631243066666669,
+      "opsPerSec": 21592
+    },
+    "korean-language-detection": {
+      "name": "korean-language-detection",
+      "iterations": 10000,
+      "totalMs": 4.59741699999995,
+      "avgMs": 0.00045974169999999504,
+      "opsPerSec": 2175134
+    },
+    "mixed-language-cleaning": {
+      "name": "mixed-language-cleaning",
+      "iterations": 5000,
+      "totalMs": 5.983625000000302,
+      "avgMs": 0.0011967250000000603,
+      "opsPerSec": 835614
+    },
+    "pdf-data-preparation": {
+      "name": "pdf-data-preparation",
+      "iterations": 1000,
+      "totalMs": 1.928707999999915,
+      "avgMs": 0.0019287079999999151,
+      "opsPerSec": 518482
+    }
+  }
+}

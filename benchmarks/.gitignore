@@ -1,0 +1,5 @@
+# Ignore baseline unless explicitly added
+# baseline.json
+
+# Allow everything else
+!README.md
