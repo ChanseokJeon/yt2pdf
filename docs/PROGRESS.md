@@ -278,10 +278,12 @@ signed-url: V4, 24시간 만료
 
 | 시간 | 작업 내용 |
 |------|----------|
+| - | Phase 7 리팩토링 Phase 1 완료 - 유틸리티 추출 (session-009) |
+| - | 4개 모듈 추출: text-normalizer, image, language, time |
+| - | 테스트 784개 통과, 90%+ 커버리지 (새 모듈) |
 | - | Phase 6 완료 (프로덕션 배포) |
 | - | Cloud Run 배포 완료 |
 | - | GCS Signed URL 연동 완료 |
-| - | 테스트 617개 달성, 94%+ 커버리지 유지 |
 | - | YouTube IP 차단 이슈 문서화 |
 
 ### 2026-02-02
@@ -361,14 +363,14 @@ gsutil lifecycle set lifecycle.json gs://yt2pdf-output
 | 0.4 | 시각적 회귀 테스트 설정 | ✅ 완료 | tests/visual/* |
 | 0.5 | 6-Layer 검증 인프라 | ✅ 완료 | .dependency-cruiser.js, scripts/benchmark.js |
 
-### Phase 1: PDF Generator 유틸리티 추출 (예정)
+### Phase 1: PDF Generator 유틸리티 추출
 
 | ID | 태스크 | 상태 | 파일 |
 |----|--------|------|------|
-| 1.1 | 텍스트 정규화 모듈 | ⬜ 대기 | src/utils/text-normalizer.ts |
-| 1.2 | 이미지 유틸리티 모듈 | ⬜ 대기 | src/utils/image.ts |
-| 1.3 | 언어 유틸리티 통합 | ⬜ 대기 | src/utils/language.ts |
-| 1.4 | formatTimestamp 이동 | ⬜ 대기 | src/utils/time.ts |
+| 1.1 | 텍스트 정규화 모듈 | ✅ 완료 | src/utils/text-normalizer.ts |
+| 1.2 | 이미지 유틸리티 모듈 | ✅ 완료 | src/utils/image.ts |
+| 1.3 | 언어 유틸리티 통합 | ✅ 완료 | src/utils/language.ts |
+| 1.4 | formatTimestamp 이동 | ✅ 완료 | src/utils/time.ts |
 
 ### Phase 2: PDF Generator 분해 (예정)
 
@@ -379,6 +381,11 @@ gsutil lifecycle set lifecycle.json gs://yt2pdf-output
 | 2.3 | 출력 생성기 추출 | ⬜ 대기 | src/core/output/* |
 | 2.4 | Brief 생성기 추출 | ⬜ 대기 | src/core/output/brief-generator.ts |
 | 2.5 | 하위 호환성 파사드 | ⬜ 대기 | src/core/pdf-generator.ts |
+
+### Phase 1 완료 요약
+- 4개 유틸리티 모듈 추출: text-normalizer, image, language, time
+- 90%+ 테스트 커버리지 달성
+- 784개 테스트 통과
 
 ### Phase 3: Orchestrator & AI Provider 리팩토링 (예정)
 
