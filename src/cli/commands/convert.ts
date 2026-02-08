@@ -196,6 +196,24 @@ export async function convertCommand(url: string | undefined, options: ConvertCo
       console.log(`  ${chalk.bold('용량')}     ${formatBytes(result.stats.fileSize)}`);
       // eslint-disable-next-line no-console
       console.log(`  ${chalk.bold('스크린샷')} ${result.stats.screenshotCount}개`);
+
+      // AI 기능 상태 표시
+      const hasApiKey = !!process.env.OPENAI_API_KEY;
+      const summaryStatus = !config.summary.enabled
+        ? chalk.gray('OFF (--no-summary)')
+        : !hasApiKey
+          ? chalk.yellow('N/A (OPENAI_API_KEY 미설정)')
+          : chalk.green('ON');
+      const translateStatus = !config.translation.enabled
+        ? chalk.gray('OFF (--no-translate)')
+        : !hasApiKey
+          ? chalk.yellow('N/A (OPENAI_API_KEY 미설정)')
+          : chalk.green(`ON → ${config.translation.defaultLanguage}`);
+      // eslint-disable-next-line no-console
+      console.log(`  ${chalk.bold('요약')}     ${summaryStatus}`);
+      // eslint-disable-next-line no-console
+      console.log(`  ${chalk.bold('번역')}     ${translateStatus}`);
+
       // eslint-disable-next-line no-console
       console.log(`  ${chalk.bold('소요시간')} ${elapsedTime}초`);
       // eslint-disable-next-line no-console

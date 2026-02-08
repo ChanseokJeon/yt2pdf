@@ -22,6 +22,14 @@ describe('proxy validation', () => {
       expect(validateProxyUrl('socks5://proxy.example.com:1080')).toBe(true);
     });
 
+    it('should accept valid socks4a proxy URL', () => {
+      expect(validateProxyUrl('socks4a://proxy.example.com:1080')).toBe(true);
+    });
+
+    it('should accept valid socks5h proxy URL', () => {
+      expect(validateProxyUrl('socks5h://proxy.example.com:7000')).toBe(true);
+    });
+
     it('should accept URL with port number', () => {
       expect(validateProxyUrl('http://proxy.example.com:3128')).toBe(true);
     });

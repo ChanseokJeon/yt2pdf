@@ -5,14 +5,14 @@
 
 /**
  * Validates a proxy URL for safe use with yt-dlp
- * Accepts: http://, https://, socks4://, socks5:// protocols
+ * Accepts: http://, https://, socks4://, socks4a://, socks5://, socks5h:// protocols
  * Rejects: URLs with shell metacharacters, non-URL strings
  */
 export function validateProxyUrl(url: string): boolean {
   // Must be a valid URL with allowed protocol
   try {
     const parsed = new URL(url);
-    const allowedProtocols = ['http:', 'https:', 'socks4:', 'socks5:'];
+    const allowedProtocols = ['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'];
     if (!allowedProtocols.includes(parsed.protocol)) {
       return false;
     }
