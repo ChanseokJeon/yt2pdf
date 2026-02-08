@@ -8,10 +8,10 @@
 
 | 항목 | 값 |
 |------|-----|
-| **날짜** | 2026-02-06 |
-| **세션 ID** | session-010 |
-| **완료한 작업** | 리팩토링 Phase 2 완료 (PDF Generator 분해) |
-| **다음 작업** | Phase 3: Orchestrator & AI Provider 리팩토링 |
+| **날짜** | 2026-02-08 |
+| **세션 ID** | session-011 |
+| **완료한 작업** | Orchestrator 특성 테스트 + YouTube 프록시 검증 구현 |
+| **다음 작업** | Phase 3: Orchestrator 파이프라인 리팩토링 (A1-A4) |
 
 ---
 
@@ -44,73 +44,56 @@ docs/
 
 ---
 
-## 최근 완료한 작업: 리팩토링 Phase 2 (PDF Generator 분해)
+## 최근 완료한 작업: Orchestrator 특성 테스트 + 프록시 검증
 
 ### 커밋 정보
-- **최근 작업**: 2026-02-06
-- **변경**: PDF Generator 4개 모듈로 분해 완료
-- **상태**: 빌드/테스트 통과, 커밋 대기
+- **최근 작업**: 2026-02-08
+- **변경**: Orchestrator 특성 테스트 33개 + 프록시 URL 검증 구현
+- **상태**: 빌드/테스트 통과
 
 ### 구현 내용
 
-#### 1. 테마 시스템 추출 (2.1) ✅
-- `src/core/pdf/themes.ts`: Theme 인터페이스, DEFAULT_THEME, MINIMAL_NEON_THEME
-- loadTheme(), getThemeNames(), isValidTheme() 함수
-- 18개 테스트 통과
+#### 1. Orchestrator 특성 테스트 (1-B) ✅
+- `tests/characterization/orchestrator.test.ts`: 33개 테스트
+- Constructor, process(), processPlaylist(), 파이프라인 7단계, Dev mode, 에러 핸들링, 진행률 추적, estimateCost, 출력 형식 커버
+- 향후 리팩토링 전 현재 동작 포착
 
-#### 2. PDFKit 렌더러 추출 (2.2) ✅
-- `src/core/pdf/pdfkit-renderer.ts`: 모든 PDFKit 렌더링 메서드
-- 1,352줄, renderCoverPageSync, renderMinimalNeon* 등 18개 메서드
-- PDF 렌더링 로직 완전 분리
+#### 2. YouTube 프록시 URL 검증 (C1) ✅
+- `src/utils/proxy.ts`: validateProxyUrl(), getValidatedProxyUrl()
+- `src/providers/youtube.ts`: 검증된 프록시 URL 사용
+- `tests/unit/utils/proxy.test.ts`: 16개 테스트
+- CWE-78 커맨드 인젝션 방지
 
-#### 3. Puppeteer 렌더러 추출 (2.2) ✅
-- `src/core/pdf/puppeteer-renderer.ts`: HTML/Puppeteer 렌더링 메서드
-- 1,767줄, generateHTML, generateMinimalNeonHTML, generatePDFViaPuppeteer
-- HTML 생성 및 Puppeteer PDF 변환 로직 분리
-
-#### 4. Brief 생성기 추출 (2.4) ✅
-- `src/core/brief-generator.ts`: Executive Brief 생성 전용 클래스
-- 484줄, generateBriefPDF, generateBriefMarkdown, generateBriefHTML
-- Brief 관련 로직 완전 분리
-
-#### 5. PDFGenerator 단순화 (2.5) ✅
-- `src/core/pdf-generator.ts`: 544줄로 축소 (기존 ~3,800줄)
-- 오케스트레이션만 담당, 렌더링은 위임
+#### 3. Cache CLI 확인 (B2) ✅
+- 이미 완전히 구현됨 확인 (show, clear, cleanup 명령어)
 
 ### 테스트 현황
-- **전체 테스트**: 825개 통과
+- **전체 테스트**: 876개 통과 (기존 825개 + 신규 51개)
 - **빌드**: 0 에러
 - **린트**: 0 에러
 - **순환 의존성**: 0개
+- **E2E**: 13개 통과
 
 ---
 
-## 다음 작업 (session-011)
+## 다음 작업 (session-012)
 
-### 리팩토링 Phase 3: Orchestrator & AI Provider 리팩토링
-> **계획 문서**: `.omc/plans/refactoring-plan.md`
+### 리팩토링 Phase 3: Orchestrator 파이프라인 리팩토링
+> **계획 문서**: `.omc/plans/remaining-tasks-plan.md`
 
-1. **파이프라인 인터페이스 정의 (3.0)**
+1. **파이프라인 인터페이스 정의 (A1/3.0)**
    - `src/core/pipeline/interfaces.ts` 생성
    - PipelineStage, PipelineContext, PipelineResult 정의
-   - 3-agent 리뷰 필수
 
-2. **파이프라인 스테이지 추출 (3.1)**
-   - MetadataStage, SubtitleStage, ScreenshotStage 등 추출
-   - Orchestrator → Pipeline 구조 전환
+2. **파이프라인 스테이지 추출 (A2/3.1)**
+   - Orchestrator 915줄 → 6개 스테이지 + Coordinator
+   - 특성 테스트로 동작 보호
 
-3. **AI Provider 정리 (3.2)**
-   - ai.ts와 unified-ai.ts 역할 명확화
-   - 중복 제거 및 인터페이스 통합
-   - 플러그인 구조로 확장성 향상
+3. **AI Provider 정리 (A3/3.2)**
+   - ai.ts와 unified-ai.ts 중복 제거
 
-4. **Brief 생성기 추출 (2.4)**
-   - `src/core/output/brief-generator.ts` 생성
-   - 요약 전용 생성 로직 분리
-
-5. **하위 호환성 파사드 (2.5)**
-   - `src/core/pdf-generator.ts` 유지
-   - 레거시 API를 새 구조로 위임
+4. **통합 테스트 추가 (A4/3.3)**
+   - Pipeline 스테이지 통합 테스트
 
 ### 검증 방법
 ```bash
@@ -118,11 +101,15 @@ npm run verify:all  # 전체 6-layer 검증
 ```
 
 ### 블로커 (별도 해결 필요)
-- **YouTube IP Blocking**: Cloud Run 배포에 Residential Proxy 필요 ($6/월)
+- **YouTube IP Blocking**: 프록시 URL 검증 구현 완료. Cloud Run 배포 시 프록시 서비스 구독 필요.
 
 ---
 
 ## 이전 세션 기록
+
+### session-010 (2026-02-06): 리팩토링 Phase 2 완료
+- PDF Generator 4개 모듈로 분해 완료
+- 825개 테스트 통과
 
 ### session-009 (2026-02-06): 리팩토링 Phase 1 완료
 - 4개 유틸리티 모듈 추출 (text-normalizer, image, language, time)
@@ -218,6 +205,7 @@ export CLOUD_PROVIDER=local
 
 | 날짜 | 변경 내용 |
 |------|----------|
+| 2026-02-08 | Orchestrator 특성 테스트 + 프록시 검증 구현 (session-011) |
 | 2026-02-06 | 리팩토링 Phase 2 완료 - PDF Generator 분해 (session-010) |
 | 2026-02-06 | 리팩토링 Phase 1 완료 - 유틸리티 추출 (session-009) |
 | 2026-02-06 | 리팩토링 Phase 0 완료 - 테스트 인프라 구축 (session-008) |
@@ -245,4 +233,4 @@ export CLOUD_PROVIDER=local
 
 ---
 
-*마지막 업데이트: 2026-02-06 (session-010)*
+*마지막 업데이트: 2026-02-08 (session-011)*

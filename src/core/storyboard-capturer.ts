@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -212,12 +213,12 @@ export class StoryboardCapturer {
    * 이미지 다운로드
    */
   private async downloadImage(url: string, outputPath: string): Promise<void> {
-    // Escape shell special characters in URL
-    const escapedUrl = url.replace(/\$/g, '\\$');
-    await execAsync(`curl -s "${escapedUrl}" -o "${outputPath}"`);
-    if (!fs.existsSync(outputPath)) {
-      throw new Error(`이미지 다운로드 실패: ${url}`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`이미지 다운로드 실패: HTTP ${response.status}`);
     }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fsPromises.writeFile(outputPath, buffer);
   }
 
   /**
