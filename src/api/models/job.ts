@@ -1,19 +1,25 @@
 import { z } from 'zod';
+import { extendZodWithOpenApi } from '@hono/zod-openapi';
+
+// Extend Zod with OpenAPI metadata support
+extendZodWithOpenApi(z);
 
 // Job Status
 export type JobStatus = 'created' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 // Job Options Schema
-export const JobOptionsSchema = z.object({
-  format: z.enum(['pdf', 'md', 'html', 'brief']).default('pdf'),
-  layout: z.enum(['vertical', 'horizontal', 'minimal-neon']).default('vertical'),
-  screenshotInterval: z.number().min(30).max(600).default(60), // 챕터 없을 때만 사용
-  language: z.string().optional(),
-  includeTranslation: z.boolean().default(false),
-  includeSummary: z.boolean().default(true),
-  forceProxy: z.boolean().default(false),
-  trace: z.boolean().default(false),
-});
+export const JobOptionsSchema = z
+  .object({
+    format: z.enum(['pdf', 'md', 'html', 'brief']).default('pdf'),
+    layout: z.enum(['vertical', 'horizontal', 'minimal-neon']).default('vertical'),
+    screenshotInterval: z.number().min(30).max(600).default(60), // 챕터 없을 때만 사용
+    language: z.string().optional(),
+    includeTranslation: z.boolean().default(false),
+    includeSummary: z.boolean().default(true),
+    forceProxy: z.boolean().default(false),
+    trace: z.boolean().default(false),
+  })
+  .openapi('JobOptions');
 
 export type JobOptions = z.infer<typeof JobOptionsSchema>;
 
@@ -97,27 +103,30 @@ export interface Job {
 }
 
 // Create Job Request Schema
-export const CreateJobRequestSchema = z.object({
-  url: z
-    .string()
-    .url()
-    .refine(
-      (url) => {
-        // Validate YouTube URL
-        const youtubeRegex =
-          /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/;
-        return youtubeRegex.test(url);
-      },
-      { message: 'Invalid YouTube URL' }
-    ),
-  options: JobOptionsSchema.optional(),
-  webhook: z
-    .object({
-      url: z.string().url(),
-      secret: z.string().min(16),
-    })
-    .optional(),
-});
+export const CreateJobRequestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .refine(
+        (url) => {
+          // Validate YouTube URL
+          const youtubeRegex =
+            /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/;
+          return youtubeRegex.test(url);
+        },
+        { message: 'Invalid YouTube URL' }
+      )
+      .openapi({ example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }),
+    options: JobOptionsSchema.optional(),
+    webhook: z
+      .object({
+        url: z.string().url(),
+        secret: z.string().min(16),
+      })
+      .optional(),
+  })
+  .openapi('CreateJobRequest');
 
 export type CreateJobRequest = z.infer<typeof CreateJobRequestSchema>;
 
@@ -154,9 +163,11 @@ export interface CreateJobResponse {
 }
 
 // Analyze Response
-export const AnalyzeRequestSchema = z.object({
-  url: z.string().url(),
-});
+export const AnalyzeRequestSchema = z
+  .object({
+    url: z.string().url().openapi({ example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }),
+  })
+  .openapi('AnalyzeRequest');
 
 export interface AnalyzeResponse {
   metadata: {
@@ -178,3 +189,104 @@ export interface AnalyzeResponse {
     needsWhisper: boolean;
   };
 }
+
+// ==============================
+// OpenAPI Response Schemas (Zod)
+// ==============================
+
+// Error response schema (reused across routes)
+export const ErrorResponseSchema = z
+  .object({
+    error: z.string().openapi({ example: 'Invalid YouTube URL' }),
+    message: z.string().optional(),
+  })
+  .openapi('ErrorResponse');
+
+// Video metadata schema (subset)
+export const VideoMetadataSchema = z
+  .object({
+    title: z.string(),
+    channel: z.string(),
+    duration: z.number().openapi({ description: 'Duration in seconds' }),
+    thumbnail: z.string().url(),
+  })
+  .openapi('VideoMetadata');
+
+// Sync conversion success response
+export const SyncJobResponseSchema = z
+  .object({
+    jobId: z.string().uuid(),
+    status: z.literal('completed'),
+    downloadUrl: z.string().url(),
+    expiresAt: z.string().datetime(),
+    videoMetadata: VideoMetadataSchema.optional(),
+    stats: z.object({
+      pages: z.number(),
+      screenshotCount: z.number(),
+      fileSize: z.number(),
+      processingTime: z.number().openapi({ description: 'Processing time in ms' }),
+    }),
+    trace: z.any().optional(),
+  })
+  .openapi('SyncJobResponse');
+
+// Sync conversion error response
+export const SyncJobErrorResponseSchema = z
+  .object({
+    jobId: z.string().uuid(),
+    status: z.literal('failed'),
+    error: z.string(),
+  })
+  .openapi('SyncJobErrorResponse');
+
+// Analyze response schema
+export const AnalyzeResponseSchema = z
+  .object({
+    metadata: z.object({
+      id: z.string(),
+      title: z.string(),
+      channel: z.string(),
+      duration: z.number(),
+      thumbnail: z.string().url(),
+      chapters: z
+        .array(
+          z.object({
+            title: z.string(),
+            startTime: z.number(),
+            endTime: z.number(),
+          })
+        )
+        .optional(),
+      availableCaptions: z.array(
+        z.object({
+          language: z.string(),
+          isAutoGenerated: z.boolean(),
+        })
+      ),
+    }),
+    estimate: z.object({
+      processingTime: z.number().openapi({ description: 'Estimated processing time in seconds' }),
+      cost: z.object({
+        whisper: z.number(),
+        total: z.number(),
+        currency: z.string(),
+      }),
+      needsWhisper: z.boolean(),
+    }),
+  })
+  .openapi('AnalyzeResponse');
+
+// Health check response schema
+export const HealthStatusSchema = z
+  .object({
+    status: z.enum(['healthy', 'degraded', 'unhealthy']),
+    version: z.string(),
+    timestamp: z.string().datetime(),
+    dependencies: z.object({
+      ffmpeg: z.enum(['healthy', 'unhealthy']),
+      ytdlp: z.enum(['healthy', 'unhealthy']),
+      storage: z.enum(['healthy', 'unhealthy']),
+      queue: z.enum(['healthy', 'unhealthy']),
+    }),
+  })
+  .openapi('HealthStatus');

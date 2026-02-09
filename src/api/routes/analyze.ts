@@ -1,15 +1,57 @@
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
-import { AnalyzeRequestSchema, AnalyzeResponse } from '../models/job';
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import {
+  AnalyzeRequestSchema,
+  AnalyzeResponse,
+  AnalyzeResponseSchema,
+  ErrorResponseSchema,
+} from '../models/job';
 import { YouTubeProvider } from '../../providers/youtube';
 import { CostEstimator } from '../../core/cost-estimator';
 
-const analyze = new Hono();
+const analyze = new OpenAPIHono();
 
-/**
- * POST /analyze - Analyze video without full conversion
- */
-analyze.post('/', zValidator('json', AnalyzeRequestSchema), async (c) => {
+// --- OpenAPI Route Definition ---
+
+const analyzeRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags: ['Analysis'],
+  summary: 'Analyze video metadata',
+  description:
+    'Analyze a YouTube video without performing full conversion. Returns metadata, available captions, chapter information, and cost/time estimates.',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: AnalyzeRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Analysis successful',
+      content: {
+        'application/json': {
+          schema: AnalyzeResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid request or video not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// --- Route Handler ---
+
+analyze.openapi(analyzeRoute, async (c) => {
   const { url } = c.req.valid('json');
 
   try {
@@ -52,7 +94,7 @@ analyze.post('/', zValidator('json', AnalyzeRequestSchema), async (c) => {
       },
     };
 
-    return c.json(response);
+    return c.json(response, 200);
   } catch (error: unknown) {
     // eslint-disable-next-line no-console
     console.error('Analyze error:', error);

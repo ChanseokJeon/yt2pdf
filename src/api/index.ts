@@ -18,7 +18,17 @@ export type {
   AnalyzeResponse,
 } from './models/job';
 
-export { CreateJobRequestSchema, JobOptionsSchema, AnalyzeRequestSchema } from './models/job';
+export {
+  CreateJobRequestSchema,
+  JobOptionsSchema,
+  AnalyzeRequestSchema,
+  ErrorResponseSchema,
+  VideoMetadataSchema,
+  SyncJobResponseSchema,
+  SyncJobErrorResponseSchema,
+  AnalyzeResponseSchema,
+  HealthStatusSchema,
+} from './models/job';
 
 // Store
 export { JobStore, getJobStore, resetJobStore } from './store';

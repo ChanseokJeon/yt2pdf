@@ -15,6 +15,8 @@ const server = serve({
 console.log(`Server running at http://localhost:${port}`);
 // eslint-disable-next-line no-console
 console.log(`Health check: http://localhost:${port}/api/v1/health`);
+// eslint-disable-next-line no-console
+console.log(`API docs: http://localhost:${port}/docs`);
 
 // Graceful shutdown handlers
 let isShuttingDown = false;

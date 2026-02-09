@@ -32,7 +32,7 @@ module.exports = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(chalk|#ansi-styles|#supports-color|node-vibrant|chroma-js|uuid|hono|@hono|pdf-to-img)/)',
+    'node_modules/(?!(chalk|#ansi-styles|#supports-color|node-vibrant|chroma-js|uuid|hono|@hono|@scalar|pdf-to-img)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   verbose: true,

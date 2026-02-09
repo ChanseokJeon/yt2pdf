@@ -29,6 +29,11 @@ jest.mock('chalk', () => {
   return { default: chalk, ...chalk };
 });
 
+// @scalar/hono-api-reference 모킹 (ESM 모듈 호환성 문제 해결)
+jest.mock('@scalar/hono-api-reference', () => ({
+  Scalar: jest.fn(() => async (c: any) => c.text('Scalar UI')),
+}));
+
 // 콘솔 출력 억제 (필요시)
 // global.console = {
 //   ...console,

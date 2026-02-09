@@ -1,9 +1,11 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { FFmpegWrapper } from '../../providers/ffmpeg';
 import { YouTubeProvider } from '../../providers/youtube';
 import { getCloudProvider } from '../../cloud/factory';
+import { HealthStatusSchema } from '../models/job';
 
-const health = new Hono();
+const health = new OpenAPIHono();
 
 interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -68,10 +70,92 @@ async function checkQueueHealth(timeoutMs = 3000): Promise<'healthy' | 'unhealth
   }
 }
 
-/**
- * GET /health - Health check endpoint
- */
-health.get('/', async (c) => {
+// --- OpenAPI Route Definitions ---
+
+const healthCheckRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags: ['Health'],
+  summary: 'Health check',
+  description:
+    'Check the health status of the API and its dependencies (ffmpeg, yt-dlp, storage, queue).',
+  responses: {
+    200: {
+      description: 'Service is healthy or degraded',
+      content: {
+        'application/json': {
+          schema: HealthStatusSchema,
+        },
+      },
+    },
+    503: {
+      description: 'Service is unhealthy',
+      content: {
+        'application/json': {
+          schema: HealthStatusSchema,
+        },
+      },
+    },
+  },
+});
+
+const readinessRoute = createRoute({
+  method: 'get',
+  path: '/ready',
+  tags: ['Health'],
+  summary: 'Readiness probe',
+  description: 'Kubernetes/Cloud Run readiness probe. Verifies cloud connectivity.',
+  responses: {
+    200: {
+      description: 'Service is ready',
+      content: {
+        'application/json': {
+          schema: z.object({
+            ready: z.boolean(),
+            storage: z.enum(['healthy', 'unhealthy']),
+            queue: z.enum(['healthy', 'unhealthy']),
+          }),
+        },
+      },
+    },
+    503: {
+      description: 'Service is not ready',
+      content: {
+        'application/json': {
+          schema: z.object({
+            ready: z.boolean(),
+            storage: z.enum(['healthy', 'unhealthy']),
+            queue: z.enum(['healthy', 'unhealthy']),
+          }),
+        },
+      },
+    },
+  },
+});
+
+const livenessRoute = createRoute({
+  method: 'get',
+  path: '/live',
+  tags: ['Health'],
+  summary: 'Liveness probe',
+  description: 'Kubernetes/Cloud Run liveness probe. Always returns true if the process is alive.',
+  responses: {
+    200: {
+      description: 'Service is alive',
+      content: {
+        'application/json': {
+          schema: z.object({
+            live: z.boolean(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+// --- Route Handlers ---
+
+health.openapi(healthCheckRoute, async (c) => {
   const dependencies: HealthStatus['dependencies'] = {
     ffmpeg: 'unhealthy',
     ytdlp: 'unhealthy',
@@ -106,10 +190,7 @@ health.get('/', async (c) => {
   return c.json(status, statusCode);
 });
 
-/**
- * GET /health/ready - Readiness probe
- */
-health.get('/ready', async (c) => {
+health.openapi(readinessRoute, async (c) => {
   // For K8s/Cloud Run readiness probe - verify cloud connectivity
   const [storageHealth, queueHealth] = await Promise.all([
     checkStorageHealth(2000), // Shorter timeout for readiness
@@ -129,12 +210,9 @@ health.get('/ready', async (c) => {
   );
 });
 
-/**
- * GET /health/live - Liveness probe
- */
-health.get('/live', (c) => {
+health.openapi(livenessRoute, (c) => {
   // For K8s/Cloud Run liveness probe
-  return c.json({ live: true });
+  return c.json({ live: true }, 200);
 });
 
 export { health };

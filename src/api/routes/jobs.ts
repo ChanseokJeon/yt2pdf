@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -10,6 +10,9 @@ import {
   CreateJobResponse,
   JobOptionsSchema,
   JobStatus,
+  SyncJobResponseSchema,
+  SyncJobErrorResponseSchema,
+  ErrorResponseSchema,
 } from '../models/job';
 import { getJobStore } from '../store/job-store';
 import { getCloudProvider } from '../../cloud';
@@ -17,14 +20,63 @@ import { parseYouTubeUrl } from '../../utils/url';
 import { Orchestrator } from '../../core/orchestrator';
 import { ConfigManager } from '../../utils/config';
 
-const jobs = new Hono();
+const jobs = new OpenAPIHono();
+
+// --- OpenAPI Route Definitions ---
+
+const syncConversionRoute = createRoute({
+  method: 'post',
+  path: '/sync',
+  tags: ['Conversion'],
+  summary: 'Convert YouTube video (synchronous)',
+  description:
+    'Synchronously convert a YouTube video to PDF/MD/HTML. Waits for completion and returns a signed download URL. Designed for Cloud Run with a 14-minute timeout.',
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: CreateJobRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Conversion successful',
+      content: {
+        'application/json': {
+          schema: SyncJobResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid request (bad URL)',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Conversion failed',
+      content: {
+        'application/json': {
+          schema: SyncJobErrorResponseSchema,
+        },
+      },
+    },
+  },
+});
+
+// --- OpenAPI Route Handler ---
 
 /**
  * POST /jobs/sync - Synchronous conversion (for Cloud Run)
  * Waits for completion and returns download URL directly.
  * Use this when queue-based processing is not available.
  */
-jobs.post('/sync', zValidator('json', CreateJobRequestSchema), async (c) => {
+jobs.openapi(syncConversionRoute, async (c) => {
   const body = c.req.valid('json');
   const cloudProvider = await getCloudProvider();
   const jobId = randomUUID();
@@ -102,27 +154,30 @@ jobs.post('/sync', zValidator('json', CreateJobRequestSchema), async (c) => {
 
     const processingTime = Date.now() - startTime;
 
-    return c.json({
-      jobId,
-      status: 'completed',
-      downloadUrl: signedUrl,
-      expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
-      videoMetadata: result.metadata
-        ? {
-            title: result.metadata.title,
-            channel: result.metadata.channel,
-            duration: result.metadata.duration,
-            thumbnail: result.metadata.thumbnail,
-          }
-        : undefined,
-      stats: {
-        pages: result.stats.pages,
-        screenshotCount: result.stats.screenshotCount,
-        fileSize: buffer.length,
-        processingTime,
+    return c.json(
+      {
+        jobId,
+        status: 'completed' as const,
+        downloadUrl: signedUrl,
+        expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+        videoMetadata: result.metadata
+          ? {
+              title: result.metadata.title,
+              channel: result.metadata.channel,
+              duration: result.metadata.duration,
+              thumbnail: result.metadata.thumbnail,
+            }
+          : undefined,
+        stats: {
+          pages: result.stats.pages,
+          screenshotCount: result.stats.screenshotCount,
+          fileSize: buffer.length,
+          processingTime,
+        },
+        trace: result.trace,
       },
-      trace: result.trace,
-    });
+      200
+    );
   } catch (error) {
     console.error(`[Sync] Conversion failed for ${jobId}:`, error);
 
@@ -136,7 +191,7 @@ jobs.post('/sync', zValidator('json', CreateJobRequestSchema), async (c) => {
     return c.json(
       {
         jobId,
-        status: 'failed',
+        status: 'failed' as const,
         error: safeMessage,
       },
       500
@@ -145,11 +200,13 @@ jobs.post('/sync', zValidator('json', CreateJobRequestSchema), async (c) => {
     // Cleanup temp directory
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (e) {
+    } catch (_e) {
       console.warn(`[Sync] Failed to cleanup temp dir: ${tempDir}`);
     }
   }
 });
+
+// --- Standard Routes (not documented in OpenAPI) ---
 
 /**
  * POST /jobs - Create a new conversion job (async/queue-based)
@@ -297,7 +354,7 @@ jobs.get('/', (c) => {
   const limit = parseInt(c.req.query('limit') || '20', 10);
   const offset = parseInt(c.req.query('offset') || '0', 10);
 
-  const jobs = store.findByUserId(userId, {
+  const userJobs = store.findByUserId(userId, {
     status,
     limit: Math.min(limit, 100),
     offset,
@@ -306,7 +363,7 @@ jobs.get('/', (c) => {
   const total = store.countByUserId(userId);
 
   return c.json({
-    jobs: jobs.map((job) => ({
+    jobs: userJobs.map((job) => ({
       jobId: job.id,
       status: job.status,
       videoMetadata: job.videoMetadata,
