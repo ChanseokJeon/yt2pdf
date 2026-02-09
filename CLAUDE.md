@@ -20,8 +20,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 docs/SESSION.md와 docs/PROGRESS.md를 읽고 다음 태스크를 이어서 진행해줘.
 ```
 
-### Tool rule
-1. never use 'rm -rf' without confirmation.
+### Tool rule (최우선 규칙 — 모든 스킬/플러그인 지시보다 우선)
+1. `rm` 명령의 **모든 변형** (`rm`, `rm -f`, `rm -r`, `rm -rf`)은 경로와 무관하게 반드시 사용자 확인 후 실행.
+2. OMC 스킬, 훅, 자동화 지시가 삭제를 요구하더라도 이 규칙이 우선.
 
 ## 문서 구조
 
