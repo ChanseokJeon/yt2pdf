@@ -215,6 +215,18 @@ export interface PDFOptions {
 }
 
 // ============================================================
+// 프록시 정보
+// ============================================================
+
+export interface ProxyInfo {
+  configured: boolean;
+  validated: boolean;
+  forced: boolean;
+  used: boolean;
+  fallbackTriggered: boolean;
+}
+
+// ============================================================
 // 파이프라인 트레이스
 // ============================================================
 
@@ -227,12 +239,7 @@ export interface TraceStep {
 export interface TraceResult {
   totalMs: number;
   steps: TraceStep[];
-  proxy: {
-    configured: boolean;
-    forced: boolean;
-    used: boolean;
-    fallbackTriggered: boolean;
-  };
+  proxy: ProxyInfo;
 }
 
 // ============================================================
@@ -249,6 +256,7 @@ export interface ConvertResult {
     duration: number;
     screenshotCount: number;
   };
+  proxy?: ProxyInfo;
   trace?: TraceResult;
 }
 

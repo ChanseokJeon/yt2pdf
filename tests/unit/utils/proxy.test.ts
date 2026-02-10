@@ -113,6 +113,14 @@ describe('proxy validation', () => {
       expect(isYouTubeIpBlock('SIGN IN TO CONFIRM YOU\'RE NOT A BOT')).toBe(true);
     });
 
+    it('should detect pattern with smart quotes (U+2019)', () => {
+      expect(isYouTubeIpBlock("Sign in to confirm you\u2019re not a bot")).toBe(true);
+    });
+
+    it('should detect pattern with left smart quote (U+2018)', () => {
+      expect(isYouTubeIpBlock("Sign in to confirm you\u2018re not a bot")).toBe(true);
+    });
+
     it('should return false for unrelated errors', () => {
       expect(isYouTubeIpBlock('Video unavailable')).toBe(false);
       expect(isYouTubeIpBlock('command not found: yt-dlp')).toBe(false);

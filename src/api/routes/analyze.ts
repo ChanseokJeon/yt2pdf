@@ -53,10 +53,10 @@ const analyzeRoute = createRoute({
 // --- Route Handler ---
 
 analyze.openapi(analyzeRoute, async (c) => {
-  const { url } = c.req.valid('json');
+  const { url, forceProxy } = c.req.valid('json');
+  const youtube = new YouTubeProvider(undefined, forceProxy);
 
   try {
-    const youtube = new YouTubeProvider();
     const metadata = await youtube.getMetadata(url);
 
     // Calculate cost estimate
@@ -95,12 +95,36 @@ analyze.openapi(analyzeRoute, async (c) => {
       },
     };
 
-    return c.json(response, 200);
+    return c.json(
+      {
+        ...response,
+        proxy: {
+          configured: !!process.env.YT_DLP_PROXY,
+          validated: youtube.hasValidProxy(),
+          forced: forceProxy ?? false,
+          used: youtube.wasProxyUsed(),
+          fallbackTriggered: youtube.wasFallbackTriggered(),
+        },
+      },
+      200
+    );
   } catch (error: unknown) {
     // eslint-disable-next-line no-console
     console.error('Analyze error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to analyze video';
-    return c.json({ error: errorMessage }, 400);
+    return c.json(
+      {
+        error: errorMessage,
+        proxy: {
+          configured: !!process.env.YT_DLP_PROXY,
+          validated: youtube.hasValidProxy(),
+          forced: forceProxy ?? false,
+          used: youtube.wasProxyUsed(),
+          fallbackTriggered: youtube.wasFallbackTriggered(),
+        },
+      },
+      400
+    );
   }
 });
 

@@ -4,6 +4,21 @@ import { extendZodWithOpenApi } from '@hono/zod-openapi';
 // Extend Zod with OpenAPI metadata support
 extendZodWithOpenApi(z);
 
+// Proxy Info Schema (reusable across responses)
+const ProxyInfoSchema = z
+  .object({
+    configured: z.boolean().openapi({ description: 'Whether proxy URL is configured' }),
+    validated: z.boolean().openapi({ description: 'Whether proxy URL passed validation' }),
+    forced: z.boolean().openapi({ description: 'Whether forceProxy was requested' }),
+    used: z.boolean().openapi({ description: 'Whether proxy was actually used' }),
+    fallbackTriggered: z
+      .boolean()
+      .openapi({ description: 'Whether fallback from direct to proxy occurred' }),
+  })
+  .openapi('ProxyInfo');
+
+export { ProxyInfoSchema };
+
 // Job Status
 export type JobStatus = 'created' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
@@ -166,6 +181,7 @@ export interface CreateJobResponse {
 export const AnalyzeRequestSchema = z
   .object({
     url: z.string().url().openapi({ example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }),
+    forceProxy: z.boolean().default(false).optional().openapi({ description: 'Force proxy usage' }),
   })
   .openapi('AnalyzeRequest');
 
@@ -226,6 +242,7 @@ export const SyncJobResponseSchema = z
       fileSize: z.number(),
       processingTime: z.number().openapi({ description: 'Processing time in ms' }),
     }),
+    proxy: ProxyInfoSchema.optional(),
     trace: z.any().optional(),
   })
   .openapi('SyncJobResponse');
@@ -236,6 +253,7 @@ export const SyncJobErrorResponseSchema = z
     jobId: z.string().uuid(),
     status: z.literal('failed'),
     error: z.string(),
+    proxy: ProxyInfoSchema.optional(),
   })
   .openapi('SyncJobErrorResponse');
 
@@ -273,6 +291,7 @@ export const AnalyzeResponseSchema = z
       }),
       needsWhisper: z.boolean(),
     }),
+    proxy: ProxyInfoSchema.optional(),
   })
   .openapi('AnalyzeResponse');
 

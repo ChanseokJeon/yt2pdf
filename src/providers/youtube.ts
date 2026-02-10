@@ -54,6 +54,11 @@ export class YouTubeProvider {
     return this._lastCallFallbackTriggered;
   }
 
+  /** Whether a validated proxy URL is available */
+  hasValidProxy(): boolean {
+    return !!this.proxyUrl;
+  }
+
   /** Base args for all yt-dlp calls (no proxy) */
   private getBaseArgs(): string[] {
     return [];

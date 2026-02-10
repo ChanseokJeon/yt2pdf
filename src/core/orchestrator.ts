@@ -305,17 +305,21 @@ export class Orchestrator {
         traceSteps.push({ name: 'pdf-generate', ms: Date.now() - stepStart });
       }
 
-      // Trace 결과 첨부
+      // Proxy info always included (not just when trace enabled)
+      result.proxy = {
+        configured: !!process.env.YT_DLP_PROXY,
+        validated: this.youtube.hasValidProxy(),
+        forced: this.forceProxy,
+        used: this.youtube.wasProxyUsed(),
+        fallbackTriggered: this.youtube.wasFallbackTriggered(),
+      };
+
+      // Trace 결과 첨부 (trace steps only when enabled)
       if (this.traceEnabled) {
         result.trace = {
           totalMs: Date.now() - pipelineStart,
           steps: traceSteps,
-          proxy: {
-            configured: !!process.env.YT_DLP_PROXY,
-            forced: this.forceProxy,
-            used: this.youtube.wasProxyUsed(),
-            fallbackTriggered: this.youtube.wasFallbackTriggered(),
-          },
+          proxy: result.proxy,
         };
       }
 

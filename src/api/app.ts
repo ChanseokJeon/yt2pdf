@@ -58,8 +58,8 @@ app.route('/api/v1/health', health);
 app.get('/openapi.json', (c) => {
   // Construct server URL from request
   const host = c.req.header('host');
-  const proto = c.req.header('x-forwarded-proto') ||
-                (c.req.url.startsWith('https://') ? 'https' : 'http');
+  const proto =
+    c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https://') ? 'https' : 'http');
   const serverUrl = host ? `${proto}://${host}` : 'http://localhost:3000';
 
   // Get the base OpenAPI document from Hono

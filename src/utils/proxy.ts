@@ -58,6 +58,7 @@ const YOUTUBE_BLOCK_PATTERNS = [
  * Checks error text (from err.message and/or err.stderr) for known patterns
  */
 export function isYouTubeIpBlock(errorText: string): boolean {
-  const lower = errorText.toLowerCase();
-  return YOUTUBE_BLOCK_PATTERNS.some((pattern) => lower.includes(pattern));
+  // Normalize smart quotes (U+2018, U+2019) to regular apostrophe (U+0027)
+  const normalized = errorText.toLowerCase().replace(/[\u2018\u2019]/g, "'");
+  return YOUTUBE_BLOCK_PATTERNS.some((pattern) => normalized.includes(pattern));
 }

@@ -21,6 +21,7 @@ import { Orchestrator } from '../../core/orchestrator';
 import { ConfigManager } from '../../utils/config';
 import { getQueueName, getBucketName } from '../../constants';
 import type { AppEnv } from '../types.js';
+import { getValidatedProxyUrl } from '../../utils/proxy.js';
 
 const jobs = new OpenAPIHono<AppEnv>();
 
@@ -180,6 +181,7 @@ jobs.openapi(syncConversionRoute, async (c) => {
           fileSize: buffer.length,
           processingTime,
         },
+        proxy: result.proxy,
         trace: result.trace,
       },
       200
@@ -199,6 +201,13 @@ jobs.openapi(syncConversionRoute, async (c) => {
         jobId,
         status: 'failed' as const,
         error: safeMessage,
+        proxy: {
+          configured: !!process.env.YT_DLP_PROXY,
+          validated: !!getValidatedProxyUrl(process.env.YT_DLP_PROXY),
+          forced: options.forceProxy ?? false,
+          used: false,
+          fallbackTriggered: false,
+        },
       },
       500
     );
