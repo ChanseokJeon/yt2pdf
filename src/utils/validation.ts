@@ -38,7 +38,7 @@ export function validateYouTubeUrl(url: string | undefined): ValidationResult {
  * 출력 형식 유효성 검사
  */
 export function validateOutputFormat(format: string | undefined): ValidationResult {
-  const validFormats: OutputFormat[] = ['pdf', 'md', 'html'];
+  const validFormats: OutputFormat[] = ['pdf', 'md', 'html', 'brief'];
 
   if (!format) {
     return { valid: true, errors: [] }; // 기본값 사용
