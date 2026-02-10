@@ -20,8 +20,9 @@ import { parseYouTubeUrl } from '../../utils/url';
 import { Orchestrator } from '../../core/orchestrator';
 import { ConfigManager } from '../../utils/config';
 import { getQueueName, getBucketName } from '../../constants';
+import type { AppEnv } from '../types.js';
 
-const jobs = new OpenAPIHono();
+const jobs = new OpenAPIHono<AppEnv>();
 
 // --- OpenAPI Route Definitions ---
 
@@ -82,6 +83,10 @@ jobs.openapi(syncConversionRoute, async (c) => {
   const cloudProvider = await getCloudProvider();
   const jobId = randomUUID();
   const startTime = Date.now();
+
+  // P2-14 fix: Track userId for audit purposes
+  const userId = c.get('userId');
+  console.log(`[Jobs] Sync conversion started by user: ${userId}, jobId: ${jobId}`);
 
   // Parse YouTube URL
   const urlInfo = parseYouTubeUrl(body.url);
@@ -223,8 +228,8 @@ jobs.post('/', zValidator('json', CreateJobRequestSchema), async (c) => {
     return c.json({ error: 'Invalid YouTube URL' }, 400);
   }
 
-  // Get userId from header or generate anonymous
-  const userId = c.req.header('X-User-Id') || 'anonymous';
+  // Get userId from auth context (set by apiKeyAuth middleware)
+  const userId = c.get('userId');
 
   // Create job
   const jobId = randomUUID();
@@ -287,6 +292,12 @@ jobs.get('/:jobId', async (c) => {
     return c.json({ error: 'Job not found' }, 404);
   }
 
+  // P0-2 fix: Enforce ownership without anonymous bypass
+  const userId = c.get('userId');
+  if (job.userId !== userId) {
+    return c.json({ error: 'Job not found' }, 404);
+  }
+
   const response: JobResponse = {
     jobId: job.id,
     status: job.status,
@@ -333,6 +344,12 @@ jobs.delete('/:jobId', (c) => {
     return c.json({ error: 'Job not found' }, 404);
   }
 
+  // P0-2 fix: Enforce ownership without anonymous bypass
+  const userId = c.get('userId');
+  if (job.userId !== userId) {
+    return c.json({ error: 'Job not found' }, 404);
+  }
+
   // Can only cancel pending/queued jobs
   if (!['created', 'queued'].includes(job.status)) {
     return c.json({ error: `Cannot cancel job with status: ${job.status}` }, 400);
@@ -348,7 +365,8 @@ jobs.delete('/:jobId', (c) => {
  */
 jobs.get('/', (c) => {
   const store = getJobStore();
-  const userId = c.req.header('X-User-Id') || 'anonymous';
+  // Get userId from auth context (set by apiKeyAuth middleware)
+  const userId = c.get('userId');
 
   const statusQuery = c.req.query('status');
   const status = statusQuery ? (statusQuery as JobStatus) : undefined;

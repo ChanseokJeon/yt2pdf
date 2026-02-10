@@ -7,8 +7,9 @@ import {
 } from '../models/job';
 import { YouTubeProvider } from '../../providers/youtube';
 import { CostEstimator } from '../../core/cost-estimator';
+import type { AppEnv } from '../types.js';
 
-const analyze = new OpenAPIHono();
+const analyze = new OpenAPIHono<AppEnv>();
 
 // --- OpenAPI Route Definition ---
 

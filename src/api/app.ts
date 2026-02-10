@@ -4,11 +4,14 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { jobs, analyze, health } from './routes';
+import type { AppEnv } from './types.js';
+import { apiKeyAuth, getAuthMode } from './middleware/api-key-auth.js';
+import { globalRateLimit, perKeyRateLimit } from './middleware/rate-limit.js';
 
 // Create the main app with OpenAPI support
-const app = new OpenAPIHono();
+const app = new OpenAPIHono<AppEnv>();
 
-// Global middleware
+// Global middleware (applied to all routes)
 app.use('*', logger());
 app.use('*', prettyJSON());
 app.use(
@@ -19,6 +22,15 @@ app.use(
     allowHeaders: ['Content-Type', 'Authorization', 'X-User-Id', 'X-API-Key'],
   })
 );
+
+// Rate limiting (before auth to reject DoS early)
+app.use('*', globalRateLimit());
+
+// Authentication (exempts /health, /docs, /openapi.json, /)
+app.use('*', apiKeyAuth({ mode: getAuthMode() }));
+
+// Per-key rate limiting (after auth so we have userId)
+app.use('*', perKeyRateLimit());
 
 // Error handler
 app.onError((err, c) => {
@@ -43,7 +55,7 @@ app.route('/api/v1/analyze', analyze);
 app.route('/api/v1/health', health);
 
 // OpenAPI spec endpoint
-app.doc('/openapi.json', {
+const baseConfig = {
   openapi: '3.0.0',
   info: {
     title: 'v2doc API',
@@ -74,7 +86,24 @@ app.doc('/openapi.json', {
       description: 'Service health and readiness checks',
     },
   ],
-});
+};
+
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+app.doc('/openapi.json', {
+  ...baseConfig,
+  security: [{ bearerAuth: [] }],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'API Key',
+        description: 'API key authentication. Format: `Authorization: Bearer v2d_...`',
+      },
+    },
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any);
 
 // Scalar API documentation UI
 app.get(
