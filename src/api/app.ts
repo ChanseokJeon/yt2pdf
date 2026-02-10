@@ -54,56 +54,62 @@ app.route('/api/v1/jobs', jobs);
 app.route('/api/v1/analyze', analyze);
 app.route('/api/v1/health', health);
 
-// OpenAPI spec endpoint
-const baseConfig = {
-  openapi: '3.0.0',
-  info: {
-    title: 'v2doc API',
-    version: process.env.npm_package_version || '1.0.0',
-    description:
-      'Convert YouTube videos to PDF, Markdown, or HTML. Extract subtitles and screenshots, with optional AI-powered translation and summarization.',
-    license: {
-      name: 'MIT',
-    },
-  },
-  servers: [
-    {
-      url: 'http://localhost:3000',
-      description: 'Local development',
-    },
-  ],
-  tags: [
-    {
-      name: 'Conversion',
-      description: 'YouTube video conversion endpoints',
-    },
-    {
-      name: 'Analysis',
-      description: 'Video analysis and metadata extraction',
-    },
-    {
-      name: 'Health',
-      description: 'Service health and readiness checks',
-    },
-  ],
-};
+// OpenAPI spec endpoint (dynamic)
+app.get('/openapi.json', (c) => {
+  // Construct server URL from request
+  const host = c.req.header('host');
+  const proto = c.req.header('x-forwarded-proto') ||
+                (c.req.url.startsWith('https://') ? 'https' : 'http');
+  const serverUrl = host ? `${proto}://${host}` : 'http://localhost:3000';
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-app.doc('/openapi.json', {
-  ...baseConfig,
-  security: [{ bearerAuth: [] }],
-  components: {
-    securitySchemes: {
-      bearerAuth: {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'API Key',
-        description: 'API key authentication. Format: `Authorization: Bearer v2d_...`',
+  // Get the base OpenAPI document from Hono
+  const baseDoc = app.getOpenAPIDocument({
+    openapi: '3.0.0',
+    info: {
+      title: 'v2doc API',
+      version: process.env.npm_package_version || '1.0.0',
+      description:
+        'Convert YouTube videos to PDF, Markdown, or HTML. Extract subtitles and screenshots, with optional AI-powered translation and summarization.',
+      license: {
+        name: 'MIT',
       },
     },
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any);
+    servers: [
+      {
+        url: serverUrl,
+        description: host ? 'Current server' : 'Local development',
+      },
+    ],
+    tags: [
+      {
+        name: 'Conversion',
+        description: 'YouTube video conversion endpoints',
+      },
+      {
+        name: 'Analysis',
+        description: 'Video analysis and metadata extraction',
+      },
+      {
+        name: 'Health',
+        description: 'Service health and readiness checks',
+      },
+    ],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'API Key',
+          description: 'API key authentication. Format: `Authorization: Bearer v2d_...`',
+        },
+      },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+
+  return c.json(baseDoc);
+});
 
 // Scalar API documentation UI
 app.get(
