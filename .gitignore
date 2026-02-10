@@ -28,13 +28,11 @@ coverage/
 
 # Output files
 output/
+.local-storage/
 
 # Temporary files
 tmp/
 temp/
-
-# E2E test output
-e2e-output/
 
 # Claude Code
 .claude/

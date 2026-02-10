@@ -52,13 +52,100 @@ docs/
 
 CLI ↔ API 인자는 반드시 1:1 대응 (kebab-case ↔ camelCase 변환만 다름).
 
+## 파일 시스템 규칙
+
+**결과물 생성 위치:**
+- ✅ `output/` 또는 `output/[하위폴더]/` 사용
+- ❌ 새로운 최상위 폴더 생성 금지 (`test-output/`, `e2e-output/` 등)
+- 예: `output/api-test/`, `output/benchmarks/`, `output/temp/`
+
 ## 기술 스택
 
 - **언어**: Node.js / TypeScript
 - **자막**: YouTube 자막 우선, OpenAI Whisper API 폴백
 - **스크린샷**: FFmpeg (1분 간격, 480p)
 - **설정**: YAML (v2doc.config.yaml)
-- **사용 형태**: CLI + Claude Code Skill (/v2doc)
+- **사용 형태**: CLI + Claude Code Skill (/v2doc) + Web API
+
+## 로컬 API 테스트
+
+### 빠른 테스트 (자동화 스크립트)
+
+```bash
+# 로컬 서버 구동 + 샘플 변환 요청 (all-in-one)
+./scripts/test-api-local.sh
+
+# 특정 YouTube 비디오로 테스트
+./scripts/test-api-local.sh "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
+```
+
+**자동으로 수행:**
+1. API 서버 시작 (port 3000)
+2. API Key 자동 생성
+3. Health check
+4. 비디오 분석 (metadata)
+5. PDF 변환 (sync mode)
+6. 결과 저장 (`output/api-local-test/`)
+7. 서버 종료
+
+### 수동 테스트 (curl)
+
+```bash
+# 1. 서버 시작 (별도 터미널)
+npm run build
+V2DOC_AUTH_MODE=enforce \
+V2DOC_API_KEYS="v2d_test_key:test-user:test-1" \
+PORT=3000 \
+node dist/api/server.js
+
+# 2. 비디오 분석
+curl -X POST http://localhost:3000/api/v1/analyze \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer v2d_test_key" \
+  -d '{"url": "https://www.youtube.com/watch?v=jNQXAC9IVRw"}'
+
+# 3. PDF 변환 (동기식)
+curl -X POST http://localhost:3000/api/v1/jobs/sync \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer v2d_test_key" \
+  -d '{
+    "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "options": {
+      "format": "pdf",
+      "screenshotInterval": 30,
+      "includeTranslation": false,
+      "includeSummary": false
+    }
+  }'
+```
+
+### E2E 테스트
+
+```bash
+# 전체 API 플로우 E2E 테스트
+npm test -- tests/e2e/api-full-flow.e2e.test.ts --forceExit
+
+# 인증 및 보안 테스트
+npm test -- tests/e2e/api-auth-security.e2e.test.ts --forceExit
+
+# 모든 E2E 테스트
+npm test -- tests/e2e/ --forceExit
+```
+
+### 출력 폴더 구조
+
+```
+output/
+├── api-local-test/        # 로컬 API 테스트 결과
+│   ├── server.log
+│   ├── health.json
+│   ├── analyze.json
+│   ├── convert.json
+│   └── output.pdf
+└── [CLI 출력 파일들]       # CLI 사용 시 생성
+```
+
+**참고:** `output/` 폴더는 gitignore에 포함되어 있음
 
 ---
 
