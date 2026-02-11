@@ -6,15 +6,15 @@
 # Cloud Run 프로덕션 서버를 테스트합니다. (서버는 이미 실행 중)
 #
 # Usage:
-#   ./scripts/test-api-prod.sh [BASE_URL] [VIDEO_URL]
-#   V2DOC_API_KEY=xxx ./scripts/test-api-prod.sh
-#   V2DOC_API_KEY=xxx V2DOC_BASE_URL=xxx ./scripts/test-api-prod.sh
+#   ./scripts/test-api-prod.sh [VIDEO_URL]
+#   ./scripts/test-api-prod.sh [VIDEO_URL] -u BASE_URL -k API_KEY
 #
 # Examples:
-#   ./scripts/test-api-prod.sh
-#   ./scripts/test-api-prod.sh https://v2doc-xxx.run.app
-#   ./scripts/test-api-prod.sh https://v2doc-xxx.run.app "https://www.youtube.com/watch?v=VIDEO_ID"
-#   V2DOC_API_KEY=custom_key ./scripts/test-api-prod.sh
+#   ./scripts/test-api-prod.sh                                          # 샘플 비디오 (Me at the zoo)
+#   ./scripts/test-api-prod.sh "https://www.youtube.com/watch?v=ID"     # 커스텀 비디오
+#   ./scripts/test-api-prod.sh -u https://v2doc-xxx.run.app             # 커스텀 서버
+#   ./scripts/test-api-prod.sh -k my_api_key "https://...?v=ID"        # 커스텀 키 + 비디오
+#   V2DOC_API_KEY=xxx ./scripts/test-api-prod.sh                        # 환경변수로 키 전달
 ##############################################################################
 
 set -e
@@ -26,14 +26,49 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Defaults
 DEFAULT_BASE_URL="https://v2doc-941839241915.asia-northeast3.run.app"
 DEFAULT_API_KEY="REDACTED"
 DEFAULT_VIDEO_URL="https://www.youtube.com/watch?v=jNQXAC9IVRw" # "Me at the zoo" (18s)
 
-BASE_URL="${V2DOC_BASE_URL:-${1:-$DEFAULT_BASE_URL}}"
-TEST_VIDEO_URL="${2:-$DEFAULT_VIDEO_URL}"
-API_KEY="${V2DOC_API_KEY:-$DEFAULT_API_KEY}"
+# Parse options
+OPT_BASE_URL=""
+OPT_API_KEY=""
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -u|--url)
+      OPT_BASE_URL="$2"
+      shift 2
+      ;;
+    -k|--key)
+      OPT_API_KEY="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: ./scripts/test-api-prod.sh [VIDEO_URL] [-u BASE_URL] [-k API_KEY]"
+      echo ""
+      echo "Options:"
+      echo "  -u, --url   Base URL of the API server"
+      echo "  -k, --key   API key for authentication"
+      echo "  -h, --help  Show this help message"
+      echo ""
+      echo "Environment variables:"
+      echo "  V2DOC_BASE_URL  Base URL (overridden by -u)"
+      echo "  V2DOC_API_KEY   API key (overridden by -k)"
+      exit 0
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+BASE_URL="${OPT_BASE_URL:-${V2DOC_BASE_URL:-$DEFAULT_BASE_URL}}"
+TEST_VIDEO_URL="${POSITIONAL_ARGS[0]:-$DEFAULT_VIDEO_URL}"
+API_KEY="${OPT_API_KEY:-${V2DOC_API_KEY:-$DEFAULT_API_KEY}}"
 OUTPUT_DIR="./output/api-prod-test"
 
 echo -e "${BLUE}========================================${NC}"
@@ -206,15 +241,26 @@ if echo "$CONVERT_RESPONSE" | jq -e '.status' > /dev/null 2>&1; then
     fi
     echo ""
 
-    # Display download URL (GCS or file://)
-    if [[ "$DOWNLOAD_URL" == https://storage.googleapis.com/* ]]; then
-      echo -e "   ${GREEN}Download URL: ${BLUE}${DOWNLOAD_URL}${NC}"
-      echo -e "   ${YELLOW}(GCS signed URL - download manually or use curl/wget)${NC}"
+    # Download the PDF
+    if [[ "$DOWNLOAD_URL" == https://* ]]; then
+      OUTPUT_PDF="$OUTPUT_DIR/output.pdf"
+      echo -e "   ${YELLOW}Downloading PDF...${NC}"
+      if curl -s --max-time 30 -o "$OUTPUT_PDF" "$DOWNLOAD_URL"; then
+        DOWNLOADED_SIZE=$(wc -c < "$OUTPUT_PDF" | tr -d ' ')
+        DOWNLOADED_KB=$((DOWNLOADED_SIZE / 1024))
+        echo -e "   ${GREEN}✓ PDF downloaded: ${BLUE}${OUTPUT_PDF}${NC} (${DOWNLOADED_KB} KB)"
+        # Open on macOS
+        if command -v open &> /dev/null; then
+          open "$OUTPUT_PDF"
+          echo -e "   ${GREEN}✓ PDF opened${NC}"
+        fi
+      else
+        echo -e "   ${RED}✗ Download failed${NC}"
+        echo -e "   ${YELLOW}URL: ${DOWNLOAD_URL}${NC}"
+      fi
     elif [[ "$DOWNLOAD_URL" == file://* ]]; then
       echo -e "   ${YELLOW}Download URL: ${DOWNLOAD_URL}${NC}"
-      echo -e "   ${YELLOW}(Local file path on remote server - cannot download)${NC}"
-    else
-      echo -e "   ${YELLOW}Download URL: ${DOWNLOAD_URL}${NC}"
+      echo -e "   ${YELLOW}(Local file on remote server - cannot download)${NC}"
     fi
   else
     echo -e "${RED}✗ Conversion failed with status: ${STATUS}${NC}"
@@ -239,10 +285,14 @@ echo -e "  - root.json"
 echo -e "  - openapi.json"
 echo -e "  - analyze.json"
 echo -e "  - convert.json"
+echo -e "  - output.pdf"
 echo ""
 echo -e "${YELLOW}Tip: 다른 비디오로 테스트하려면:${NC}"
-echo -e "  ./scripts/test-api-prod.sh \"${BASE_URL}\" \"https://www.youtube.com/watch?v=YOUR_VIDEO_ID\""
+echo -e "  ./scripts/test-api-prod.sh \"https://www.youtube.com/watch?v=YOUR_VIDEO_ID\""
 echo ""
-echo -e "${YELLOW}Tip: 다른 API 키로 테스트하려면:${NC}"
-echo -e "  V2DOC_API_KEY=your_key ./scripts/test-api-prod.sh"
+echo -e "${YELLOW}Tip: 다른 서버/키로 테스트하려면:${NC}"
+echo -e "  ./scripts/test-api-prod.sh -u https://v2doc-xxx.run.app -k your_api_key"
+echo ""
+echo -e "${YELLOW}Tip: 도움말:${NC}"
+echo -e "  ./scripts/test-api-prod.sh --help"
 echo ""
