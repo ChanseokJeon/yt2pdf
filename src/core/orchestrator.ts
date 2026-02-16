@@ -42,6 +42,7 @@ import { parseYouTubeUrl, buildVideoUrl } from '../utils/url.js';
 import { MetadataStage } from './pipeline/stages/metadata-stage.js';
 import { SummaryStage } from './pipeline/stages/summary-stage.js';
 import { ScreenshotStage } from './pipeline/stages/screenshot-stage.js';
+import { SubtitleStage } from './pipeline/stages/subtitle-stage.js';
 import { PipelineContext } from './pipeline/types.js';
 
 export interface OrchestratorOptions {
@@ -234,11 +235,21 @@ export class Orchestrator {
 
       // 2. 자막 추출 및 번역
       stepStart = Date.now();
-      const { subtitles, processedSegments } = await this.extractAndTranslateSubtitles(
+      const subtitleStage = new SubtitleStage();
+      const subtitleCtx: Partial<PipelineContext> = {
         videoId,
+        config: this.config,
+        tempDir,
+        youtube: this.youtube,
+        whisper: this.whisper,
+        ai: this.ai,
+        cache: this.cache,
         metadata,
-        tempDir
-      );
+        onProgress: (state) => this.updateState(state),
+      };
+      await subtitleStage.execute(subtitleCtx as PipelineContext);
+      const subtitles = subtitleCtx.subtitles!;
+      const processedSegments = subtitleCtx.processedSegments!;
       if (this.traceEnabled) {
         traceSteps.push({
           name: 'subtitles',
@@ -398,6 +409,10 @@ export class Orchestrator {
   /**
    * 자막 추출 및 번역
    */
+  /**
+   * @deprecated Use SubtitleStage instead
+   */
+  // @ts-expect-error - deprecated method
   private async extractAndTranslateSubtitles(
     videoId: string,
     metadata: Awaited<ReturnType<YouTubeProvider['getMetadata']>>,
