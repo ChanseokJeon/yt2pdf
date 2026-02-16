@@ -45,6 +45,7 @@ import { ScreenshotStage } from './pipeline/stages/screenshot-stage.js';
 import { SubtitleStage } from './pipeline/stages/subtitle-stage.js';
 import { ClassificationStage } from './pipeline/stages/classification-stage.js';
 import { ContentProcessingStage } from './pipeline/stages/content-processing-stage.js';
+import { OutputStage } from './pipeline/stages/output-stage.js';
 import { PipelineContext } from './pipeline/types.js';
 
 export interface OrchestratorOptions {
@@ -351,16 +352,24 @@ export class Orchestrator {
 
       // 7. 출력 생성
       stepStart = Date.now();
-      const result = await this.generateOutput(
-        options,
+      const outputStage = new OutputStage();
+      const outputCtx: Partial<PipelineContext> = {
         videoId,
+        options,
+        config: this.config,
+        ai: this.ai,
         metadata,
         content,
         chapters,
         processedSegments,
         summary,
-        screenshots
-      );
+        screenshots,
+        onProgress: (state) => this.updateState(state),
+        traceEnabled: this.traceEnabled,
+        traceSteps: [],
+      };
+      await outputStage.execute(outputCtx as PipelineContext);
+      const result = outputCtx.result!;
       if (this.traceEnabled) {
         traceSteps.push({ name: 'pdf-generate', ms: Date.now() - stepStart });
       }
@@ -877,8 +886,9 @@ export class Orchestrator {
   }
 
   /**
-   * 출력 파일 생성
+   * @deprecated Extracted to OutputStage. Remove after migration is verified.
    */
+  // @ts-expect-error TS6133: Deprecated, no longer called — kept until cleanup phase
   private async generateOutput(
     options: ConvertOptions,
     videoId: string,
@@ -932,7 +942,7 @@ export class Orchestrator {
   }
 
   /**
-   * Executive Brief 출력 생성
+   * @deprecated Extracted to OutputStage. Remove after migration is verified.
    */
   private async generateBriefOutput(
     outputDir: string,
@@ -991,7 +1001,7 @@ export class Orchestrator {
   }
 
   /**
-   * 표준 형식 출력 생성 (pdf, md, html)
+   * @deprecated Extracted to OutputStage. Remove after migration is verified.
    */
   private async generateStandardOutput(
     outputDir: string,

@@ -66,6 +66,7 @@ export interface PipelineContext {
   screenshots?: Screenshot[];
   content?: PDFContent;
   useChapters?: boolean;
+  result?: ConvertResult;
 
   // --- Progress reporting ---
   onProgress: (progress: Partial<PipelineState>) => void;
