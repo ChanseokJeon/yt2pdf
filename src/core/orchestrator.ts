@@ -41,6 +41,7 @@ import {
 import { parseYouTubeUrl, buildVideoUrl } from '../utils/url.js';
 import { MetadataStage } from './pipeline/stages/metadata-stage.js';
 import { SummaryStage } from './pipeline/stages/summary-stage.js';
+import { ScreenshotStage } from './pipeline/stages/screenshot-stage.js';
 import { PipelineContext } from './pipeline/types.js';
 
 export interface OrchestratorOptions {
@@ -278,12 +279,22 @@ export class Orchestrator {
 
       // 5. 스크린샷 캡처
       stepStart = Date.now();
-      const { screenshots, useChapters } = await this.captureScreenshots(
+      const screenshotStage = new ScreenshotStage();
+      const screenshotCtx: Partial<PipelineContext> = {
         videoId,
+        config: this.config,
+        tempDir,
+        ffmpeg: this.ffmpeg,
+        youtube: this.youtube,
         metadata,
         chapters,
-        tempDir
-      );
+        onProgress: (state) => this.updateState(state),
+        traceEnabled: this.traceEnabled,
+        traceSteps,
+      };
+      await screenshotStage.execute(screenshotCtx as PipelineContext);
+      const screenshots = screenshotCtx.screenshots!;
+      const useChapters = screenshotCtx.useChapters!;
       if (this.traceEnabled) {
         traceSteps.push({
           name: 'screenshots',
@@ -571,7 +582,9 @@ export class Orchestrator {
 
   /**
    * 스크린샷 캡처
+   * @deprecated Use ScreenshotStage instead
    */
+  // @ts-expect-error - deprecated, kept for reference
   private async captureScreenshots(
     videoId: string,
     metadata: Awaited<ReturnType<YouTubeProvider['getMetadata']>>,
