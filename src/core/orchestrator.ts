@@ -44,6 +44,7 @@ import { SummaryStage } from './pipeline/stages/summary-stage.js';
 import { ScreenshotStage } from './pipeline/stages/screenshot-stage.js';
 import { SubtitleStage } from './pipeline/stages/subtitle-stage.js';
 import { ClassificationStage } from './pipeline/stages/classification-stage.js';
+import { ContentProcessingStage } from './pipeline/stages/content-processing-stage.js';
 import { PipelineContext } from './pipeline/types.js';
 
 export interface OrchestratorOptions {
@@ -323,15 +324,23 @@ export class Orchestrator {
 
       // 6. 콘텐츠 병합 및 AI 처리
       stepStart = Date.now();
-      const content = await this.mergeContentWithAI(
+      const contentStage = new ContentProcessingStage();
+      const contentCtx: Partial<PipelineContext> = {
+        videoId,
+        config: this.config,
         metadata,
-        { ...subtitles, segments: processedSegments },
+        subtitles,
+        processedSegments,
         screenshots,
         chapters,
-        videoId,
         summary,
-        useChapters
-      );
+        useChapters,
+        ai: this.ai,
+        unifiedProcessor: this.unifiedProcessor,
+        onProgress: (state) => this.updateState(state),
+      };
+      await contentStage.execute(contentCtx as PipelineContext);
+      const content = contentCtx.content!;
       if (this.traceEnabled) {
         traceSteps.push({
           name: 'ai-processing',
@@ -678,8 +687,9 @@ export class Orchestrator {
   }
 
   /**
-   * 콘텐츠 병합 및 AI 처리
+   * @deprecated Extracted to ContentProcessingStage. Remove after migration is verified.
    */
+  // @ts-expect-error Deprecated: now handled by ContentProcessingStage
   private async mergeContentWithAI(
     metadata: Awaited<ReturnType<YouTubeProvider['getMetadata']>>,
     subtitles: Awaited<ReturnType<SubtitleExtractor['extract']>>,
@@ -715,7 +725,7 @@ export class Orchestrator {
   }
 
   /**
-   * 통합 AI 처리 (번역 + 섹션 요약)
+   * @deprecated Extracted to ContentProcessingStage. Remove after migration is verified.
    */
   private async processUnifiedAI(
     content: ReturnType<ContentMerger['merge']>,
@@ -811,7 +821,7 @@ export class Orchestrator {
   }
 
   /**
-   * 섹션별 요약 생성 (통합 처리 폴백)
+   * @deprecated Extracted to ContentProcessingStage. Remove after migration is verified.
    */
   private async processSectionSummaries(
     content: ReturnType<ContentMerger['merge']>,
