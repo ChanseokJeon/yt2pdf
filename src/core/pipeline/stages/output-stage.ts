@@ -45,7 +45,10 @@ export class OutputStage implements PipelineStage {
     });
 
     const format = options.format || config.output.format;
-    const pdfGenerator = new PDFGenerator(config.pdf);
+    const pdfGenerator = new PDFGenerator({
+      ...config.pdf,
+      imageQuality: config.screenshot.quality,
+    });
 
     let result: ConvertResult;
 
@@ -80,7 +83,7 @@ export class OutputStage implements PipelineStage {
     context: PipelineContext,
     outputDir: string,
     filename: string,
-    metadata: PipelineContext['metadata'] & {},
+    metadata: NonNullable<PipelineContext['metadata']>,
     chapters: NonNullable<PipelineContext['chapters']>,
     processedSegments: NonNullable<PipelineContext['processedSegments']>,
     summary: PipelineContext['summary'],
@@ -139,7 +142,7 @@ export class OutputStage implements PipelineStage {
     outputDir: string,
     filename: string,
     format: string,
-    metadata: PipelineContext['metadata'] & {},
+    metadata: NonNullable<PipelineContext['metadata']>,
     content: NonNullable<PipelineContext['content']>,
     screenshots: NonNullable<PipelineContext['screenshots']>,
     pdfGenerator: PDFGenerator

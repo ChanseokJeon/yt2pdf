@@ -914,7 +914,10 @@ export class Orchestrator {
     });
 
     const format = options.format || this.config.output.format;
-    const pdfGenerator = new PDFGenerator(this.config.pdf);
+    const pdfGenerator = new PDFGenerator({
+      ...this.config.pdf,
+      imageQuality: this.config.screenshot.quality,
+    });
 
     // brief 형식 처리
     if (format === 'brief') {

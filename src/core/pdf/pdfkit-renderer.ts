@@ -406,16 +406,17 @@ export default class PDFKitRenderer {
     }
 
     // Screenshot
+    const imageMaxHeight = this.config.imageQuality === 'high' ? 340 : 200;
     try {
       doc.image(section.screenshot.imagePath, {
-        fit: [pageWidth, 200],
+        fit: [pageWidth, imageMaxHeight],
         align: 'center',
       });
     } catch {
       doc.text('[이미지 로드 실패]');
     }
 
-    doc.moveDown();
+    doc.moveDown(this.config.imageQuality === 'high' ? 1.5 : 1);
 
     // Timestamp
     const timestamp = formatTimestamp(section.timestamp);

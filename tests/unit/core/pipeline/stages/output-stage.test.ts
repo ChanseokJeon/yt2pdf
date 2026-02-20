@@ -485,7 +485,10 @@ describe('OutputStage', () => {
 
       await stage.execute(mockContext as PipelineContext);
 
-      expect(PDFGenerator).toHaveBeenCalledWith(mockContext.config!.pdf);
+      expect(PDFGenerator).toHaveBeenCalledWith({
+        ...mockContext.config!.pdf,
+        imageQuality: mockContext.config!.screenshot.quality,
+      });
     });
   });
 

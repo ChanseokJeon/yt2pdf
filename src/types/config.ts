@@ -34,6 +34,7 @@ export const PDFConfigSchema = z.object({
   includeToc: z.boolean().default(true),
   timestampLinks: z.boolean().default(true),
   searchable: z.boolean().default(true),
+  imageQuality: z.enum(['low', 'high']).optional(),
 });
 
 export const WhisperConfigSchema = z.object({
